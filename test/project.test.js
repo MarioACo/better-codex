@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { layoutOf } from '../src/brief.js'
+import { layoutOf, onPath, shellLine } from '../src/brief.js'
 import { parseValue } from '../src/config.js'
 import { detectProject, testCommand } from '../src/project.js'
 import { tempDir, write } from './helpers.js'
@@ -58,4 +58,16 @@ test('config values typed on the command line', () => {
   assert.equal(parseValue('meter', 'always'), 'always')
   assert.throws(() => parseValue('meter', 'loud'), /warn \| always \| off/)
   assert.throws(() => parseValue('nope', '1'), /unknown key/)
+})
+
+test('brief: shell notes for the first calls that failed live (npm.ps1 blocked, rg missing)', () => {
+  assert.equal(
+    shellLine({ root: '/r', commands: 'npm test npm run build', platform: 'win32', hasRg: false }),
+    '- shell: in PowerShell call `npm.cmd` (the .ps1 wrapper may be blocked); `rg` is not installed: search with `git grep -n`'
+  )
+  assert.match(shellLine({ root: null, commands: 'pnpm test', platform: 'win32', hasRg: true }), /`pnpm\.cmd`/)
+  assert.equal(shellLine({ root: '/r', commands: 'npm test', platform: 'linux', hasRg: true }), '')
+  assert.equal(shellLine({ root: '/r', commands: 'cargo test', platform: 'win32', hasRg: true }), '')
+  assert.equal(onPath('definitely-not-a-real-tool-bcx'), false)
+  assert.equal(onPath('node'), true)
 })

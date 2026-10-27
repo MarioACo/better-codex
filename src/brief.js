@@ -1,5 +1,5 @@
-import { statSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, statSync } from 'node:fs'
+import { delimiter, join } from 'node:path'
 import { gitBranch, gitChanges, gitFiles, gitRoot } from './git.js'
 import { detectProject } from './project.js'
 import { clip } from './util.js'
@@ -35,6 +35,19 @@ function handoffLine(root) {
   }
 }
 
+export const onPath = (name, path = process.env.PATH || '') =>
+  path.split(delimiter).some(dir => dir && ['', '.exe', '.cmd'].some(ext => existsSync(join(dir, name + ext))))
+
+// First calls that failed in real sessions, every time: rg not installed, and npm.ps1 blocked by
+// PowerShell's execution policy. Saying so up front saves the failed call and its output.
+export function shellLine({ root, commands, platform = process.platform, hasRg = onPath('rg') }) {
+  const notes = []
+  const node = platform === 'win32' && /\b(npm|pnpm|yarn)\b/.exec(commands)?.[1]
+  if (node) notes.push(`in PowerShell call \`${node}.cmd\` (the .ps1 wrapper may be blocked)`)
+  if (!hasRg) notes.push(`\`rg\` is not installed: search with ${root ? '`git grep -n`' : platform === 'win32' ? '`Select-String`' : '`grep -rn`'}`)
+  return notes.length ? `- shell: ${notes.join('; ')}` : ''
+}
+
 // The facts Codex usually spends its first tool calls on (status, stack, commands, layout), in ~150-300 tokens.
 export function repoBrief(cwd) {
   const root = gitRoot(cwd)
@@ -56,6 +69,8 @@ export function repoBrief(cwd) {
   const commands = Object.entries(project.commands).map(([name, cmd]) => `${name} \`${cmd}\``)
   if (commands.length) lines.push(`- commands: ${commands.join(' · ')}`)
   if (project.verify) lines.push(`- after code changes verify with \`${project.verify}\` (or a narrower check)`)
+  const shell = shellLine({ root, commands: Object.values(project.commands).join(' ') })
+  if (shell) lines.push(shell)
   if (root) {
     const layout = layoutOf(gitFiles(root))
     if (layout) lines.push(`- layout: ${layout}`)

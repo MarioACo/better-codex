@@ -168,7 +168,8 @@ export function install({ dryRun = false, hooks = true, agents = true, plugins =
       saved = backup(hooksPath())
       writeJson(hooksPath(), next)
     }
-    const inline = /^\s*\[\[?hooks[.\]]/m.test(readText(join(codexHome(), 'config.toml'), ''))
+    // Hook definitions only: [hooks.state.'…'] is where Codex records which hooks you trusted.
+    const inline = /^\s*\[\[?hooks(\]|\.(?!state\b))/m.test(readText(join(codexHome(), 'config.toml'), ''))
     steps.push({ id: 'hooks', file: hooksPath(), changed, backup: saved, note: inline ? 'config.toml also has inline [hooks]: Codex merges both and warns at startup' : null })
   }
 

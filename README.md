@@ -100,7 +100,9 @@ Codex:  Quiero ejecutar `git push --force origin main`. Es necesario porque tu r
 Tú:     sí
 ```
 
-La aprobación vale **para esa acción y solo en ese turno**: si Codex la reintenta con otra sintaxis (`rm -rf x` o `Remove-Item -Recurse x`) pasa, pero cualquier otra acción riesgosa vuelve a preguntar. «Sí, pero…», «espera» o cualquier otra respuesta la cancelan. Prueba un comando con `bcx guard "git reset --hard"`, revisa qué habría detenido en tus sesiones pasadas con `bcx audit`, y qué detuvo de verdad con `bcx log`.
+La aprobación vale **para esa acción y solo en ese turno**: si Codex la reintenta con otra sintaxis (`rm -rf x` o `Remove-Item -Recurse x`) pasa, pero cualquier otra acción riesgosa vuelve a preguntar. «Sí, pero…», «espera» o cualquier otra respuesta la cancelan.
+
+Casi siempre Codex pregunta **antes** de que el guard tenga que intervenir: las reglas que better-codex le da se lo piden. Tu «sí» a esa pregunta también cuenta, así que no tienes que confirmar dos veces. Eso sí, solo cubre lo que la pregunta mostraba: el comando exacto o las rutas exactas que nombró, para ese tipo de acción. Si Codex luego intenta otra cosa, o usa una variable (`$target`) en vez de la ruta, el guard lo detiene igual. Prueba un comando con `bcx guard "git reset --hard"`, revisa qué habría detenido en tus sesiones pasadas con `bcx audit`, y qué detuvo de verdad con `bcx log`.
 
 El guard es una capa extra, no un reemplazo del sandbox y las aprobaciones de Codex: protege de los errores de un agente que coopera, no de uno malicioso. Ver [SECURITY.md](SECURITY.md).
 

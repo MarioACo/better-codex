@@ -91,3 +91,11 @@ test('the TUI command adds --no-daemon only for the CLI bundled with the desktop
   const bundled = tuiCommand({ bin: join('C:', 'Users', 'Juan Pérez', '.codex', '.sandbox-bin', 'codex.exe') })
   assert.match(bundled, /"[^"]*Juan Pérez[^"]*codex\.exe" --no-daemon$/)
 })
+
+test('trusting hooks writes [hooks.state] to config.toml: that is not a second set of hooks', () => {
+  const home = isolate()
+  writeFileSync(join(home, 'config.toml'), "[hooks.state]\n[hooks.state.'x:pre_tool_use:0:0']\ntrusted_hash = \"abc\"\n")
+  assert.equal(install({ plugins: false, agents: false }).find(s => s.id === 'hooks').note, null)
+  writeFileSync(join(home, 'config.toml'), '[[hooks.PreToolUse]]\nmatcher = "Bash"\n')
+  assert.match(install({ plugins: false, agents: false }).find(s => s.id === 'hooks').note, /inline \[hooks\]/)
+})

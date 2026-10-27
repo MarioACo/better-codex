@@ -23,7 +23,9 @@ export const freshState = () => ({
   created: [],
   userDirty: [],
   meter: {},
-  guard: { pending: [], approved: [], approvedTurn: null }
+  // Codex's last message, so a "yes" can be tied to the question it answers.
+  lastAnswer: '',
+  guard: { pending: [], approved: [], approvedTurn: null, asked: '' }
 })
 
 export function loadState(id) {

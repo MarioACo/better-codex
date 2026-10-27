@@ -566,7 +566,7 @@ function inspectCommand(command, ctx, depth) {
       checkScript(seg, ctx, depth) ||
       checkNpmScript(seg, ctx, depth)
     // What Codex ran is the outer command; the detail tells what it leads to.
-    if (found) return { ...found, command: seg.text.slice(0, 300) }
+    if (found) return { ...found, command: seg.text.slice(0, 300), targets: pathArgs(seg.argv) }
   }
   return null
 }
@@ -576,7 +576,7 @@ export function inspect({ toolName, toolInput, cwd, created = [], touched = [], 
   const ctx = context({ cwd, created, touched, userDirty })
   if (/apply_patch|edit|write/i.test(toolName || '') || patchFiles(toolInput).length) {
     const found = checkPatch(toolInput, ctx)
-    if (found) return { ...found, command: 'apply_patch' }
+    if (found) return { ...found, command: 'apply_patch', targets: patchFiles(toolInput).map(f => f.path) }
   }
   for (const command of toolCommands(toolName, toolInput)) {
     const found = inspectCommand(command, ctx, 0)
@@ -595,8 +595,55 @@ export function denyReason(found) {
     `Risk: ${rule.risk.en}.`,
     'Do not run it and do not work around this block with an equivalent command. First ask the user, in their language and briefly:',
     `1) the exact command and what it will do, 2) why their request needs it, 3) what could be lost or affected, 4) a safer alternative (${rule.safer}).`,
-    'Then end your turn and wait. If the user approves in their next message, it will be allowed once.'
+    'Show the command with literal paths (no variables). Then end your turn and wait. If the user approves in their next message, that exact command is allowed once.'
   ].join('\n')
+}
+
+// How a question about each risk sounds, in Spanish or English.
+const ASKS = {
+  delete: /borr|elimin|delet|remov|\brm\b|rmdir|rimraf|limpi|clean|purg|wipe|vac[ií]/iu,
+  'git-discard': /descart|discard|reset|restor|checkout|switch|revert|stash|clean|perd|lose|deshac|undo/iu,
+  'git-history': /push|force|histor|rebase|reflog|rama|branch|filter|amend|reescrib|rewrit|prune/iu,
+  'git-secrets': /git add|commit|stage|agreg|añad|\badd\b/iu,
+  'secrets-read': /lee|leer|mostr|muestr|abr|read|show|print|imprim|\bcat\b|get-content|\btype\b|conten/iu,
+  'secrets-write': /escrib|edit|modific|cambi|actualiz|sobrescrib|reemplaz|copi|write|overwrit|replac|chang|updat|\bcopy\b/iu,
+  database: /drop|truncat|delete|borr|elimin|reset|migra|flush|wipe|base de datos|database|tabla|table/iu,
+  infra: /deploy|despl|publi|destro|destru|apply|delete|elimin|borr|prod|release|lanz|submit/iu,
+  system: /regist|disk|disco|format|apag|reinic|shutdown|restart|permis|firewall|defender|antivirus|pol[ií]tica|policy|restaur|restore/iu,
+  'remote-exec': /descarg|download|instal|script|ejecut|\brun\b|curl|iwr|irm|iex/iu,
+  kill: /cerr|termin|\bmat|kill|stop|deten|proces|taskkill/iu,
+  'global-config': /global|config|identidad|identity|registr|variable|entorno|environment|setx|npmrc/iu
+}
+
+const words = text =>
+  String(text ?? '')
+    .toLowerCase()
+    .replace(/\\/g, '/')
+    .split(/[\s"'`´«»“”‘’,;()[\]{}¿?¡!*]+/)
+    .map(w => w.replace(/[.:]+$/, '').replace(/^\.\//, '').replace(/(.)\/+$/, '$1'))
+    .filter(Boolean)
+
+// The user said yes right after Codex asked something. That yes covers this action only if the
+// question showed the exact command, or said what it does and named every path it touches.
+export function askedFor(found, question, cwd) {
+  if (!found || !question) return false
+  const said = words(question)
+  const command = words(found.command)
+  if (found.command !== 'apply_patch' && command.length >= 2) {
+    for (let i = 0; i + command.length <= said.length; i++) {
+      if (command.every((w, j) => said[i + j] === w)) return true
+    }
+  }
+  const targets = found.targets || []
+  if (!ASKS[found.rule]?.test(question) || !targets.length || targets.some(t => /[$%]/.test(t))) return false
+  const at = path => toPosix(resolve(cwd, path)).toLowerCase()
+  const named = new Set(said)
+  const resolved = new Set(said.map(at))
+  return targets.every(t => {
+    const path = String(t).replace(/^["']|["']$/g, '')
+    const key = path.toLowerCase().replace(/\\/g, '/').replace(/^\.\//, '').replace(/(.)\/+$/, '$1')
+    return named.has(key) || resolved.has(at(path))
+  })
 }
 
 const YES = /^\s*(s[ií]+|sip|sim[oó]n|dale|adelante|ok(ay|ey)?|va|vale|claro|hazlo|h[aá]gale|h[aá]gal[oa]|procede|contin[uú]a|autoriz\p{L}*|apruebo|aprobad[oa]|confirm\p{L}*|de acuerdo|yes|yep|yeah|go(\s+ahead)?|do\s+it|proceed|approved?|sure|👍)(?![\p{L}])/iu

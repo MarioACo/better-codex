@@ -130,3 +130,39 @@ test('every feature can be turned off', () => {
   assert.equal(handle('PreToolUse', { session_id: sid, turn_id: 't1', cwd: root, tool_name: 'Bash', tool_input: { command: 'rm -rf src' } }, off), null)
   assert.equal(handle('Stop', { session_id: sid, turn_id: 't1', cwd: root, stop_hook_active: false }, off), null)
 })
+
+test('guard: a yes to the question Codex asked first does not need a second yes', () => {
+  const root = repo({ 'src/app.js': 'x', 'data/clientes.csv': 'a' })
+  write(root, { 'data/ventas.csv': 'sin commit' })
+  const sid = session()
+  const pre = (turn, command) => handle('PreToolUse', { session_id: sid, turn_id: turn, cwd: root, tool_name: 'Bash', tool_input: { command } }, cfg)
+  const ask = '`data/` tiene `ventas.csv` sin commit. Ejecutaría `Remove-Item -LiteralPath .\data -Recurse -Force`; alternativa: moverla a un respaldo. ¿Confirmas?'
+
+  handle('UserPromptSubmit', { session_id: sid, turn_id: 't1', cwd: root, prompt: 'borra la carpeta data' }, cfg)
+  handle('Stop', { session_id: sid, turn_id: 't1', cwd: root, stop_hook_active: false, last_assistant_message: ask }, cfg)
+  const yes = handle('UserPromptSubmit', { session_id: sid, turn_id: 't2', cwd: root, prompt: 'sí' }, cfg)
+  assert.match(contextOf(yes), /run exactly the command you showed/)
+  assert.equal(pre('t2', 'Remove-Item -LiteralPath .\data -Recurse -Force'), null)
+  assert.equal(pre('t2', 'rm -rf src').hookSpecificOutput.permissionDecision, 'deny') // not what was asked
+  assert.equal(pre('t2', 'Remove-Item -LiteralPath $target -Recurse -Force').hookSpecificOutput.permissionDecision, 'deny')
+  assert.equal(readEvents().filter(e => e.kind === 'guard-allowed').at(-1).via, 'question')
+
+  // The next turn starts from zero, and a yes after an answer that asked nothing approves nothing.
+  handle('Stop', { session_id: sid, turn_id: 't2', cwd: root, stop_hook_active: false, last_assistant_message: 'Listo, borré data/.' }, cfg)
+  handle('UserPromptSubmit', { session_id: sid, turn_id: 't3', cwd: root, prompt: 'sí' }, cfg)
+  write(root, { 'data/ventas.csv': 'otra vez' })
+  assert.equal(pre('t3', 'Remove-Item -LiteralPath .\data -Recurse -Force').hookSpecificOutput.permissionDecision, 'deny')
+})
+
+test('guard: after a block, a yes also covers the literal command Codex then proposed', () => {
+  const root = repo({ 'data/clientes.csv': 'a' })
+  write(root, { 'data/ventas.csv': 'sin commit' })
+  const sid = session()
+  const pre = (turn, command) => handle('PreToolUse', { session_id: sid, turn_id: turn, cwd: root, tool_name: 'Bash', tool_input: { command } }, cfg)
+  handle('UserPromptSubmit', { session_id: sid, turn_id: 't1', cwd: root, prompt: 'borra data' }, cfg)
+  assert.equal(pre('t1', '$target = Resolve-Path .\data; Remove-Item -LiteralPath $target -Recurse -Force').hookSpecificOutput.permissionDecision, 'deny')
+  const literal = join(root, 'data')
+  handle('Stop', { session_id: sid, turn_id: 't1', cwd: root, stop_hook_active: false, last_assistant_message: `Necesito ejecutar exactamente:\n\n\`Remove-Item -LiteralPath '${literal}' -Recurse -Force\`\n\n¿Confirmas este comando exacto?` }, cfg)
+  handle('UserPromptSubmit', { session_id: sid, turn_id: 't2', cwd: root, prompt: 'sí' }, cfg)
+  assert.equal(pre('t2', `Remove-Item -LiteralPath '${literal}' -Recurse -Force`), null)
+})

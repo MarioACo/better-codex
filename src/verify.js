@@ -9,6 +9,9 @@ export const VERIFY = /\b(npm|pnpm|yarn|bun)\s+(run\s+)?(test|check|lint|typeche
 
 const union = (list, items, max) => [...new Set([...list, ...items])].slice(-max)
 
+// On Windows Codex often calls npm.cmd (PowerShell blocks npm.ps1) or node.exe: same command.
+const withoutExt = command => command.replace(/\b(npm|pnpm|yarn|bun|npx|pnpx|bunx|ng|node|deno|python3?|py|tsc|eslint|vitest|jest)\.(cmd|ps1|exe|bat)\b/gi, '$1')
+
 // PostToolUse: remembers what the turn edited and whether a check ran after the last edit.
 export function trackTool(state, { toolName, toolInput, cwd, verifyCmd }) {
   const commands = toolCommands(toolName, toolInput)
@@ -16,7 +19,7 @@ export function trackTool(state, { toolName, toolInput, cwd, verifyCmd }) {
   const written = commands.flatMap(shellWrites)
   const edits = [...patch.map(f => f.path), ...written]
   const created = [...patch.filter(f => f.op === 'add').map(f => f.path), ...written]
-  const verified = commands.some(c => VERIFY.test(c) || (verifyCmd && c.includes(verifyCmd)))
+  const verified = commands.map(withoutExt).some(c => VERIFY.test(c) || (verifyCmd && c.includes(verifyCmd)))
   const abs = p => norm(resolve(cwd, p))
 
   if (edits.length) {

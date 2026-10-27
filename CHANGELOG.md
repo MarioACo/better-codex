@@ -1,5 +1,15 @@
 # Changelog
 
+## Sin publicar
+
+Encontrado probando con Codex 0.164 de verdad (extensión de VS Code, Windows):
+
+- **Guard**: un «sí» a la pregunta que Codex hizo por su cuenta ya no exige una segunda confirmación. Cubre solo el comando o las rutas que esa pregunta mostraba. Codex ahora muestra el comando con rutas literales al preguntar.
+- **Verify gate**: `npm.cmd test`, `node.exe --test` y similares cuentan como verificación (antes Codex repetía los tests).
+- **Resumen del repo**: en Windows avisa de usar `npm.cmd` (PowerShell suele bloquear `npm.ps1`) y, si `rg` no está instalado, de buscar con `git grep -n`. Eran 2 llamadas fallidas por sesión.
+- **Instalación**: imprime el comando exacto para abrir Codex y aprobar los hooks (`--no-daemon` con el CLI que trae la app); `[hooks.state]` en `config.toml` ya no se confunde con hooks duplicados.
+- **doctor / log**: dicen qué falta de verdad y distinguen «permitido» de «ejecutado».
+
 ## 0.1.0 — 2026-10-27
 
 Primera versión.

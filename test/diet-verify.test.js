@@ -71,3 +71,22 @@ test('verify gate: docs-only changes, no verify command, or a custom check', () 
   trackTool(code, { toolName: 'Bash', toolInput: { command: 'make verify-all' }, cwd: '/r', verifyCmd: 'make verify-all' })
   assert.equal(gateReason(code, { verify: 'make verify-all' }), null)
 })
+
+test('verify gate: npm.cmd test inside a PowerShell wrapper counts (seen live on Windows)', () => {
+  const state = freshState()
+  const project = { verify: 'npm test' }
+  trackTool(state, { toolName: 'apply_patch', toolInput: { command: '*** Begin Patch\n*** Update File: src/cart.js\n*** End Patch' }, cwd: '/r' })
+  trackTool(state, {
+    toolName: 'Bash',
+    toolInput: { command: `"C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe" -Command 'npm.cmd test; git diff -- src/cart.js; git status --short'` },
+    cwd: '/r',
+    verifyCmd: 'npm test'
+  })
+  assert.equal(gateReason(state, project), null)
+  for (const command of ['pnpm.cmd run lint', 'node.exe --test', 'npx.cmd vitest run']) {
+    const s = freshState()
+    trackTool(s, { toolName: 'apply_patch', toolInput: { command: '*** Begin Patch\n*** Update File: a.ts\n*** End Patch' }, cwd: '/r' })
+    trackTool(s, { toolName: 'Bash', toolInput: { command }, cwd: '/r' })
+    assert.equal(gateReason(s, project), null, command)
+  }
+})

@@ -96,7 +96,8 @@ const commands = {
       const what = {
         'guard-blocked': () => `${red('⛔')} ${RULES[e.rule]?.title[lang] ?? e.rule}  ${dim(e.command || '')}`,
         'guard-approved': () => `${green('✓')} ${L('aprobado por ti', 'approved by you')}  ${dim(e.command || '')}`,
-        'guard-allowed': () => `${green('▶')} ${L('ejecutado con tu aprobación', 'ran with your approval')}  ${dim(e.command || '')}`,
+        'guard-allowed': () =>
+          `${green('▶')} ${e.via === 'question' ? L('permitido: dijiste «sí» a la pregunta de Codex', 'allowed: you said yes to Codex’s question') : L('permitido con tu aprobación', 'allowed with your approval')}  ${dim(e.command || '')}`,
         diet: () => `${cyan('✂')} ${L('lectura evitada', 'read skipped')} (${e.rule})  ${dim(e.path || '')}${e.savedTokens ? dim(`  ≈${humanNumber(e.savedTokens)} tokens`) : ''}`,
         'verify-gate': () => `${yellow('↻')} ${L('le pedí verificar antes de terminar', 'asked to verify before finishing')}`,
         'big-output': () => `${yellow('!')} ${L('salida enorme', 'huge output')} ≈${humanNumber(e.tokens)} tokens`,

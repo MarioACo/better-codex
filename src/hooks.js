@@ -2,7 +2,7 @@ import { repoBrief } from './brief.js'
 import { loadConfig } from './config.js'
 import { dietCheck } from './diet.js'
 import { gitFiles, gitRoot } from './git.js'
-import { denyReason, gitStatusMap, inspect, isApproval, norm, RULES, sameAction } from './guard.js'
+import { askedFor, denyReason, gitStatusMap, inspect, isApproval, norm, RULES, sameAction } from './guard.js'
 import { pick, resolveLang } from './i18n.js'
 import { meterCheck } from './meter.js'
 import { record } from './metrics.js'
@@ -46,22 +46,25 @@ function onUserPromptSubmit(input, cfg, cwd) {
   if (cfg.guard) {
     safely(() => {
       const guard = state.guard
+      const yes = isApproval(prompt)
+      // A yes to a question Codex asked covers what that question showed (see askedFor).
+      const asked = yes && /[?¿]/.test(state.lastAnswer) ? state.lastAnswer : ''
+      guard.approved = []
+      guard.asked = asked
+      guard.approvedTurn = asked ? (input.turn_id ?? '*') : null
       if (guard.pending.length) {
         const names = guard.pending.map(p => `${RULES[p.rule].title.en} (\`${p.command}\`)`).join('; ')
-        if (isApproval(prompt)) {
+        if (yes) {
           guard.approved = guard.pending.map(({ rule, detail }) => ({ rule, detail }))
           guard.approvedTurn = input.turn_id ?? '*'
           parts.push(`[better-codex guard] The user approved, for this turn only: ${names}. Run exactly that; anything else risky still needs approval.`)
           record('guard-approved', { rules: guard.approved.map(a => a.rule), command: guard.pending[0].command.slice(0, 160) })
         } else {
-          guard.approved = []
-          guard.approvedTurn = null
           parts.push(`[better-codex guard] The user did not clearly approve: ${names}. Do not run it; follow their new message. It needs an explicit yes.`)
         }
         guard.pending = []
-      } else {
-        guard.approved = []
-        guard.approvedTurn = null
+      } else if (asked) {
+        parts.push('[better-codex guard] The user said yes to your question: run exactly the command you showed them; anything else risky still needs approval.')
       }
     })
   }
@@ -118,9 +121,10 @@ function onPreToolUse(input, cfg, cwd) {
     const found = safely(() => inspect({ toolName, toolInput, cwd: workdir, created: state.created, touched: state.touched, userDirty: state.userDirty }))
     if (found) {
       const guard = state.guard
-      const approved = (guard.approvedTurn === '*' || guard.approvedTurn === input.turn_id) && guard.approved.some(a => sameAction(a, found))
-      if (approved) {
-        record('guard-allowed', { rule: found.rule, command: found.command.slice(0, 160) })
+      const thisTurn = guard.approvedTurn === '*' || guard.approvedTurn === input.turn_id
+      const via = !thisTurn ? null : guard.approved.some(a => sameAction(a, found)) ? 'block' : askedFor(found, guard.asked, workdir) ? 'question' : null
+      if (via) {
+        record('guard-allowed', { rule: found.rule, via, command: found.command.slice(0, 160) })
         return null
       }
       guard.pending = [
@@ -168,6 +172,7 @@ function onStop(input, cfg, lang) {
   const state = loadState(input.session_id)
   const out = {}
   const messages = []
+  state.lastAnswer = clip(String(input.last_assistant_message ?? ''), 4000)
 
   if (cfg.guard) {
     for (const p of state.guard.pending) {

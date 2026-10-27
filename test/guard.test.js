@@ -3,7 +3,7 @@ import { writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { gitStatusMap, inspect, isApproval, isSecretPath, norm } from '../src/guard.js'
+import { askedFor, gitStatusMap, inspect, isApproval, isSecretPath, norm } from '../src/guard.js'
 import { repo, tempDir, write } from './helpers.js'
 
 const bash = (command, cwd, extra = {}) => inspect({ toolName: 'Bash', toolInput: { command }, cwd, ...extra })
@@ -231,4 +231,19 @@ test('apply_patch: deleting files git cannot restore, or touching secrets', () =
 test('approval: a short clear yes, in Spanish or English', () => {
   for (const yes of ['sí', 'si', 'Sí, hazlo', 'dale', 'adelante', 'ok', 'autorizo', 'yes', 'go ahead', 'procede', '👍']) assert.ok(isApproval(yes), yes)
   for (const no of ['no', 'no lo hagas', 'sí, pero primero haz backup', 'espera', 'mejor no', 'qué hace eso?', 'cancel', 'okey no']) assert.ok(!isApproval(no), no)
+})
+
+test('a yes to a question covers the exact command it showed, or the paths it named for that risk', () => {
+  const cwd = repo()
+  const q = '¿Confirmas que ejecute `Remove-Item -LiteralPath .\data -Recurse -Force`? Se pierde data/ventas.csv.'
+  assert.ok(askedFor({ rule: 'delete', command: 'Remove-Item -LiteralPath .\data -Recurse -Force', targets: ['.\data'] }, q, cwd))
+  assert.ok(askedFor({ rule: 'delete', command: 'rm -rf data', targets: ['data'] }, '¿Borro la carpeta `data/`?', cwd))
+  assert.ok(askedFor({ rule: 'delete', command: `rm -rf ${join(cwd, 'data')}`, targets: [join(cwd, 'data')] }, '¿Borro `./data`?', cwd))
+  assert.ok(askedFor({ rule: 'git-history', command: 'git push --force origin main' }, '¿Ejecuto `git push --force origin main`?', cwd))
+  // Something else, a different risk, a variable target, or a path that only looks alike.
+  assert.ok(!askedFor({ rule: 'delete', command: 'rm -rf src', targets: ['src'] }, q, cwd))
+  assert.ok(!askedFor({ rule: 'delete', command: 'rm -rf data', targets: ['data'] }, '¿Muevo `data/` a una carpeta de respaldo?', cwd))
+  assert.ok(!askedFor({ rule: 'delete', command: 'Remove-Item -LiteralPath $target -Recurse', targets: ['$target'] }, '¿Borro data/?', cwd))
+  assert.ok(!askedFor({ rule: 'delete', command: 'rm -rf data', targets: ['data'] }, '¿Borro `data/old`?', cwd))
+  assert.ok(!askedFor({ rule: 'delete', command: 'rm -rf data', targets: ['data'] }, '', cwd))
 })
