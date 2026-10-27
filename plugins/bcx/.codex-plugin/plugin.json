@@ -1,0 +1,25 @@
+{
+  "name": "bcx",
+  "version": "0.1.0",
+  "description": "better-codex skills: Conventional Commits, refine a vague request, hand off long sessions, and debug methodically.",
+  "author": {
+    "name": "MarioACo",
+    "url": "https://github.com/MarioACo"
+  },
+  "homepage": "https://github.com/MarioACo/better-codex",
+  "repository": "https://github.com/MarioACo/better-codex",
+  "license": "MIT",
+  "keywords": ["git", "commit", "prompt", "refine", "handoff", "context", "debugging"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "better-codex",
+    "shortDescription": "Commit, refine, handoff and debug",
+    "longDescription": "$bcx:commit splits your changes into Conventional Commits and pushes or not. $bcx:refine turns a rough request into a brief with goal, files, constraints, acceptance criteria and verification. $bcx:handoff writes a compact note so the work continues in a fresh, cheap session. $bcx:debug runs reproduce → isolate → root cause → regression test.",
+    "developerName": "better-codex",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Read", "Write"],
+    "websiteURL": "https://github.com/MarioACo/better-codex",
+    "defaultPrompt": ["$bcx:commit", "$bcx:refine add CSV export to the reports page", "$bcx:handoff"],
+    "brandColor": "#0EA5E9"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "better-codex",
+  "interface": {
+    "displayName": "better-codex"
+  },
+  "plugins": [
+    {
+      "name": "bcx",
+      "source": {
+        "source": "local",
+        "path": "./plugins/bcx"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

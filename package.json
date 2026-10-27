@@ -1,0 +1,42 @@
+{
+  "name": "better-codex",
+  "version": "0.1.0",
+  "description": "Hooks, skills and metrics that make OpenAI Codex spend fewer tokens, answer better and ask before anything destructive.",
+  "type": "module",
+  "license": "MIT",
+  "author": "MarioACo",
+  "homepage": "https://github.com/MarioACo/better-codex#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MarioACo/better-codex.git"
+  },
+  "bin": {
+    "bcx": "bin/bcx.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "templates",
+    "plugins",
+    ".agents",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test",
+    "doctor": "node bin/bcx.js doctor --offline",
+    "check": "npm test && node bin/bcx.js doctor --offline"
+  },
+  "keywords": [
+    "codex",
+    "openai-codex",
+    "codex-cli",
+    "codex-hooks",
+    "codex-plugin",
+    "agents-md",
+    "tokens",
+    "safety"
+  ]
+}
