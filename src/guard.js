@@ -194,9 +194,9 @@ function context({ cwd, created = [], touched = [], userDirty = [] }) {
   const root = () => (repo ??= { root: gitRoot(cwd) }).root
   const realRoot = () => (repo.real ??= real(repo.root))
   let status = null
-  const createdSet = new Set(created)
-  const touchedSet = new Set(touched)
-  const userDirtySet = new Set(userDirty)
+  // Same spelling on both sides of every comparison; built only when a rule asks.
+  let sets = null
+  const set = name => (sets ??= { created: new Set(created.map(canon)), touched: new Set(touched.map(canon)), userDirty: new Set(userDirty.map(canon)) })[name]
   const ctx = {
     cwd,
     get root() {
@@ -204,7 +204,7 @@ function context({ cwd, created = [], touched = [], userDirty = [] }) {
     },
     lists: { created, touched, userDirty },
     abs: p => toPosix(resolve(cwd, String(p).replace(/^["']|["']$/g, ''))),
-    isTouched: abs => touchedSet.has(norm(abs)) || createdSet.has(norm(abs)),
+    isTouched: abs => set('touched').has(canon(abs)) || set('created').has(canon(abs)),
     status: () => (status ??= gitStatusMap(root())),
     // git answers with real paths; the shell may be under a symlink (macOS /var → /private/var).
     rel: abs => (root() ? toPosix(relative(realRoot(), real(abs))) : null),
@@ -216,15 +216,15 @@ function context({ cwd, created = [], touched = [], userDirty = [] }) {
       if ([...ctx.status().keys()].some(p => p === rel || p.startsWith(`${rel}/`))) return false
       return run('git', ['ls-files', '--error-unmatch', '--', rel], { cwd: root() }) !== null
     },
-    isCreated: abs => createdSet.has(norm(abs)),
+    isCreated: abs => set('created').has(canon(abs)),
     // Uncommitted work Codex would destroy that is not only its own: yours, or from before this session.
     protectedChanges(paths = [], { untrackedOnly = false } = {}) {
       const scope = paths.filter(p => p !== '.' && p !== '*').map(p => ctx.rel(ctx.abs(p)))
       return [...ctx.status()]
         .filter(([path, code]) => !untrackedOnly || code === '??')
         .filter(([path]) => !scope.length || scope.some(s => path === s || path.startsWith(`${s}/`) || s.startsWith(`${path}`)))
-        .map(([path]) => norm(`${root()}/${path}`))
-        .filter(abs => userDirtySet.has(abs) || !(touchedSet.has(abs) || [...createdSet].some(c => c === abs || c.startsWith(abs))))
+        .map(([path]) => canon(`${root()}/${path}`))
+        .filter(abs => set('userDirty').has(abs) || !(set('touched').has(abs) || [...set('created')].some(c => c === abs || c.startsWith(abs))))
     }
   }
   return ctx
@@ -240,7 +240,11 @@ function real(p) {
   }
 }
 
-const inTemp = abs => norm(real(abs)).startsWith(norm(real(tmpdir())))
+const inTemp = abs => canon(abs).startsWith(canon(tmpdir()))
+
+// One spelling per file: symlinks (macOS /var → /private/var) and Windows short names
+// (C:\Users\RUNNER~1) resolved, so Codex's own files are recognized as its own.
+export const canon = p => norm(real(p))
 
 const describe = target => (/^[$%]/.test(target) ? `${target} (a variable: the path is only known when it runs)` : target)
 

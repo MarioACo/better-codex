@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { smokeTest } from '../src/doctor.js'
@@ -75,7 +75,10 @@ test('a home folder with spaces: every hook runs through the real shells', () =>
   install({ plugins: false, agents: false })
   assert.match(installedCommand('Stop'), /"[^"]*Juan Pérez[^"]*bcx\.js" hook Stop$/)
   const results = smokeTest({ command: installedCommand })
-  assert.deepEqual(results.filter(r => !r.ok), [])
+  // If this ever fails again, show what is on disk: non-ASCII characters as code points reveal a mangled "é".
+  const names = dir => (existsSync(dir) ? readdirSync(dir).map(n => n.replace(/[^\x20-\x7e]/g, c => `\\u${c.charCodeAt(0).toString(16)}`)).join(', ') : 'missing')
+  const seen = `script exists: ${existsSync(join(appDir(), 'bin', 'bcx.js'))} · ${parent}: [${names(parent)}] · data: [${names(join(home, 'better-codex'))}] · command: ${installedCommand('Stop')}`
+  assert.deepEqual(results.filter(r => !r.ok), [], seen)
 })
 
 test('install refuses to overwrite a hooks.json it cannot parse', () => {

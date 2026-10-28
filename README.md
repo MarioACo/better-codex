@@ -264,7 +264,7 @@ This removes the hooks, the `AGENTS.md` block, the marketplace and the installed
 ## Development
 
 ```bash
-npm test          # 82 tests with node:test, no dependencies
+npm test          # 83 tests with node:test, no dependencies
 npm run check     # tests + offline doctor
 ```
 

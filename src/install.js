@@ -1,6 +1,6 @@
-import { copyFileSync, cpSync, existsSync, mkdirSync, renameSync, rmSync, unlinkSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, unlinkSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { loadConfig, saveConfig } from './config.js'
 import { norm } from './guard.js'
 import { EVENTS } from './hooks.js'
@@ -43,17 +43,35 @@ export function copyApp({ dryRun = false } = {}) {
   const old = `${target}.old-${process.pid}`
   rmSync(staging, { recursive: true, force: true })
   for (const name of APP_FILES) {
-    if (existsSync(join(ROOT, name))) cpSync(join(ROOT, name), join(staging, name), { recursive: true })
+    if (existsSync(join(ROOT, name))) copyTree(join(ROOT, name), join(staging, name))
   }
   try {
     if (existsSync(target)) renameSync(target, old)
     renameSync(staging, target)
   } catch {
     // A hook running from the old copy can keep it busy on Windows: copy over it instead.
-    cpSync(staging, target, { recursive: true, force: true })
+    copyTree(staging, target)
   }
   for (const leftover of [staging, old]) rmSync(leftover, { recursive: true, force: true })
+  // Hooks pointing at a copy that isn't there fail on every event: stop here and say so instead.
+  if (!existsSync(join(target, 'bin', 'bcx.js'))) {
+    const parent = dirname(target)
+    const found = existsSync(parent) ? readdirSync(parent).join(', ') : 'nothing'
+    throw new Error(`could not copy better-codex to ${target} (${parent} has: ${found})`)
+  }
   return { changed: true, path: target }
+}
+
+// Plain fs calls, one file at a time. cpSync left an empty install on the Windows CI runners
+// for a home folder with spaces and accents (not reproducible locally); this path has no such surprises.
+export function copyTree(from, to) {
+  if (!statSync(from).isDirectory()) {
+    mkdirSync(dirname(to), { recursive: true })
+    copyFileSync(from, to)
+    return
+  }
+  mkdirSync(to, { recursive: true })
+  for (const entry of readdirSync(from)) copyTree(join(from, entry), join(to, entry))
 }
 
 export function ourHooks() {

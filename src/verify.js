@@ -1,5 +1,5 @@
 import { resolve } from 'node:path'
-import { norm } from './guard.js'
+import { canon } from './guard.js'
 import { patchFiles, shellWrites, toolCommands } from './shell.js'
 
 export const CODE_EXT = /\.(c|cc|cpp|h|hpp|cs|fs|go|java|kt|kts|scala|swift|m|mm|rs|py|rb|php|js|jsx|mjs|cjs|ts|tsx|mts|cts|vue|svelte|astro|dart|lua|ex|exs|sql|sh|ps1|gradle|html)$/i
@@ -55,7 +55,7 @@ export function trackTool(state, { toolName, toolInput, cwd, verifyCmd, output }
   const edits = [...patch.map(f => f.path), ...written]
   const created = [...patch.filter(f => f.op === 'add').map(f => f.path), ...written]
   const verified = commands.map(withoutExt).some(c => VERIFY.test(c) || (verifyCmd && c.includes(verifyCmd)))
-  const abs = p => norm(resolve(cwd, p))
+  const abs = p => canon(resolve(cwd, p))
 
   if (edits.length) {
     state.seq += 1

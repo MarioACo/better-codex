@@ -264,7 +264,7 @@ Quita los hooks, el bloque de `AGENTS.md`, el marketplace y la copia instalada, 
 ## Desarrollo
 
 ```bash
-npm test          # 82 pruebas con node:test, sin dependencias
+npm test          # 83 pruebas con node:test, sin dependencias
 npm run check     # pruebas + doctor sin red
 ```
 

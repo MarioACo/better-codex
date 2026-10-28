@@ -2,7 +2,7 @@ import { repoBrief } from './brief.js'
 import { loadConfig } from './config.js'
 import { dietCheck } from './diet.js'
 import { gitFiles, gitRoot, knownRoots, rememberRoots } from './git.js'
-import { askedFor, denyReason, gitStatusMap, inspect, isApproval, norm, RULES, sameAction } from './guard.js'
+import { askedFor, canon, denyReason, gitStatusMap, inspect, isApproval, RULES, sameAction } from './guard.js'
 import { pick, resolveLang } from './i18n.js'
 import { meterCheck } from './meter.js'
 import { record } from './metrics.js'
@@ -80,7 +80,7 @@ function onUserPromptSubmit(input, cfg, cwd) {
       const touched = new Set(state.touched)
       const userDirty = new Set(state.userDirty)
       for (const path of gitStatusMap(root).keys()) {
-        const abs = norm(`${root}/${path}`)
+        const abs = canon(`${root}/${path}`)
         if (!touched.has(abs)) userDirty.add(abs)
       }
       state.userDirty = [...userDirty].slice(-1000)

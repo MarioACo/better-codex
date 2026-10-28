@@ -16,6 +16,8 @@ Encontrado probando con Codex 0.164 de verdad (extensión de VS Code, Windows):
 - **Reglas para Codex**: juntar en una llamada las lecturas independientes, y correr y esperar los comandos largos dentro de un solo `exec` en vez de esperas separadas.
 - **El verify gate revisa el resultado**: si la última verificación después de un cambio falló (node:test, Jest, Vitest, Mocha, pytest, Go, Cargo, tsc, ESLint, Gradle, Maven, .NET, Karma, Angular, npm) y la respuesta de Codex no lo dice, lo regresa una vez a arreglarla o a decirlo.
 - **Hooks más rápidos**: el guard solo le pregunta a git la raíz del repo cuando una regla la necesita, y la sesión la recuerda: cerca de la mitad del tiempo propio de better-codex por comando.
+- **Rutas en macOS y Windows**: el guard solo reconocía los cambios del propio Codex si la ruta venía escrita igual que la escribe git. En macOS (`/var` → `/private/var`) y con nombres cortos de Windows (`C:\Users\RUNNER~1`) preguntaba por ellos como si fueran del usuario. Ahora las rutas se comparan ya resueltas.
+- **La instalación nunca deja hooks rotos**: comprueba que la copia de la app de verdad esté ahí y, si no, se detiene con un error claro. Antes seguía en silencio, y en la CI de Windows dejó hooks apuntando a un archivo inexistente con una carpeta de usuario con espacios y acentos.
 - **Documentación**: README, guía para contribuir, política de seguridad y registro de cambios en inglés y español. El README suma una demo animada de una sesión real (`scripts/demo-svg.mjs`), una sección de problemas comunes y un consejo para apagar los skills de plugins que no usas.
 
 ## 0.1.0 — 2026-10-27

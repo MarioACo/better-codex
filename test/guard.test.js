@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { writeFileSync } from 'node:fs'
+import { symlinkSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -261,4 +261,17 @@ test('everyday commands never spawn git, and a root the session already found is
   rememberRoots({ [other]: '/known/root' })
   assert.equal(gitRoot(other), '/known/root')
   assert.equal(lookups.root, before)
+})
+
+test('Codex-only changes are recognized through a symlinked path (macOS /var, Windows short names)', () => {
+  const root = repo()
+  const link = join(tempDir(), 'link')
+  symlinkSync(root, link, 'junction') // a junction needs no admin rights on Windows
+  writeFileSync(join(root, 'src/app.js'), 'export const app = 2\n')
+  // Codex worked through the link; git reports the real path.
+  const touched = [norm(join(link, 'src/app.js'))]
+  assert.equal(rule('git checkout -- src/app.js', link, { touched }), null)
+  assert.equal(rule('git checkout -- src/app.js', root, { touched }), null)
+  // and the user's own change is still protected through the link
+  assert.equal(rule('git checkout -- src/app.js', link), 'git-discard')
 })
