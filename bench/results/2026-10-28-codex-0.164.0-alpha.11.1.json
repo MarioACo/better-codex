@@ -348,7 +348,7 @@
       "tools": 1,
       "commands": 1,
       "verified": true,
-      "asked": false,
+      "asked": true,
       "error": null
     },
     {
@@ -516,7 +516,7 @@
       "tools": 0,
       "commands": 0,
       "verified": false,
-      "asked": false,
+      "asked": true,
       "error": null
     }
   ]

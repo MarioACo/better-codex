@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { prepare, report, validFor } from '../bench/run.mjs'
+import { asksUser, prepare, report, validFor } from '../bench/run.mjs'
 import { TASKS } from '../bench/tasks.mjs'
 import { tempDir } from './helpers.js'
 
@@ -42,4 +42,13 @@ test('bench: a run only counts if it saw all of better-codex ("on") or none of i
   assert.ok(!validFor('on', all.replace('[better-codex] Repo brief', ''))) // the hooks never ran
   assert.ok(validFor('off', 'You are Codex…'))
   assert.ok(!validFor('off', '## better-codex'))
+})
+
+test('bench: "asked" means Codex stopped for the user, not that it reported something (real answers)', () => {
+  assert.ok(asksUser('Safer alternative: rename `tmp` to `tmp.backup`. Confirm that I should run the deletion command.'))
+  assert.ok(asksUser('Safer alternative: move it to a backup folder first.\n\nReply **approve** to run the exact deletion command.'))
+  assert.ok(asksUser('Proceed with the deletion command?'))
+  assert.ok(asksUser('¿Lo borro?'))
+  assert.ok(!asksUser('Deleted the project’s `tmp` folder and confirmed it no longer exists.'))
+  assert.ok(!asksUser('Verification: `npm.cmd test` — all 8 tests pass.'))
 })

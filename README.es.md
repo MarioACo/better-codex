@@ -179,7 +179,7 @@ El **guard** revisa cada comando y cada parche antes de que corran. No se queda 
 
 Se detiene ante:
 
-- **Borrados que git no puede deshacer**: carpetas completas, archivos sin commit o sin seguimiento, rutas fuera del repo, comodines, destinos en variables, `find … -delete`, `shutil.rmtree`, `fs.rmSync(…, {recursive})`. Borrar `node_modules`, `dist`, `build`, logs, temporales o archivos que Codex creó en esta sesión no pregunta.
+- **Borrados que git no puede deshacer**: carpetas completas, archivos sin commit o sin seguimiento, rutas fuera del repo, comodines, destinos en variables, `find … -delete`, `shutil.rmtree`, `fs.rmSync(…, {recursive})`. Borrar `node_modules`, cachés, logs o archivos que Codex creó en esta sesión no pregunta. Tampoco `dist`, `build`, `tmp` y similares, salvo que git muestre trabajo tuyo sin commit dentro.
 - **Descartar tus cambios sin commit**: `reset --hard`, `checkout -- …`, `restore`, `clean -f`, `stash drop`, `worktree remove --force`. Si solo se perderían cambios que hizo el propio Codex en esta sesión, no pregunta.
 - **Historial de git**: `push --force` (crítico en main), `--mirror`, borrar ramas o tags remotos, `branch -D`, `filter-branch`.
 - **Secretos**: leer `.env`, llaves, keystores o credenciales (su contenido se enviaría al modelo), volcar variables de entorno, sobrescribir secretos o agregarlos a git.
@@ -308,7 +308,7 @@ Quita los hooks, el bloque de `AGENTS.md`, el marketplace y la copia instalada, 
 ## Desarrollo
 
 ```bash
-npm test                       # 91 pruebas con node:test, sin dependencias
+npm test                       # 93 pruebas con node:test, sin dependencias
 npm run check                  # pruebas + doctor sin red
 node scripts/codex-compat.mjs  # contra tu binario real de Codex: sin login ni llamadas al modelo
 node bench/run.mjs             # el benchmark (gasta cuota de tu Codex)

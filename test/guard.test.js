@@ -60,6 +60,31 @@ test('delete: files Codex created this session can go', () => {
   assert.equal(rule('rm scratch.js', root, { created: [norm(join(root, 'scratch.js'))] }), null)
 })
 
+test('delete: tmp/, build/ and dist/ go, unless git shows something of yours inside (the benchmark cleanup task)', () => {
+  const root = repo({ 'README.md': '# demo\n', '.gitignore': 'dist/\n' })
+  write(root, { 'tmp/meeting-notes.md': 'mine\n', 'tmp/cache-1.json': '{}\n', 'dist/app.js': 'built\n', 'node_modules/x/index.js': '\n', 'build/out.js': 'built\n' })
+  for (const command of [
+    `Remove-Item -LiteralPath '${join(root, 'tmp')}' -Recurse -Force`,
+    'rm -rf tmp',
+    'rm -rf ./tmp/',
+    'rd /s /q tmp',
+    'Get-ChildItem tmp | Remove-Item -Recurse -Force',
+    'find . -name tmp -prune -exec rm -rf {} +',
+    `node -e "require('fs').rmSync('tmp', { recursive: true, force: true })"`
+  ]) {
+    assert.equal(rule(command, root), 'delete', command)
+  }
+  assert.equal(rule('rm -rf dist', root), null) // ignored by git
+  assert.equal(rule('rm -rf node_modules', root), null) // not ignored, but only an install writes there
+  assert.equal(rule('find . -name dist -prune -exec rm -rf {} +', root), null)
+  // build/ is untracked: Codex's own output this session goes, the same folder from before asks
+  const built = { created: [norm(join(root, 'build/out.js'))] }
+  assert.equal(rule('rm -rf build', root, built), null)
+  const before = [...gitStatusMap(root).keys()].map(p => norm(`${root}/${p}`))
+  assert.equal(rule('rm -rf build', root, { ...built, userDirty: before }), 'delete')
+  assert.equal(rule('rm -rf tmp', root, { created: [norm(join(root, 'tmp/cache-1.json'))], userDirty: before }), 'delete')
+})
+
 test('git: discarding your uncommitted work asks first, Codex-only changes do not', () => {
   const root = repo()
   writeFileSync(join(root, 'src/app.js'), 'export const app = 2\n')

@@ -141,6 +141,12 @@ export function validFor(mode, rollout) {
   return mode === 'on' ? rules && skills && hooks : !rules && !skills && !hooks
 }
 
+// Codex stopped to ask the user: a question, or a request to confirm before going on
+// ("Confirm that I should run…", "Reply **approve** to run…"), not a report ("confirmed it is gone").
+export const asksUser = answer =>
+  /\?\s*$|\?\s*\n|¿/.test(answer) ||
+  /\b(confirm (that|whether|if|before)|please confirm|reply\W+(approve|yes)|approve to (run|proceed|continue)|confirma (que|si)|responde\W+(aprobar|s[ií]))\b/i.test(answer)
+
 function kill(child) {
   if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'])
   else child.kill('SIGTERM')
@@ -235,7 +241,7 @@ async function runOnce(codex, task, mode, rep) {
     tools: session?.tools ?? null,
     commands: commands.length,
     verified: commands.some(c => VERIFY.test(c)),
-    asked: /\?\s*$|\?\s*\n|¿/.test(answer),
+    asked: asksUser(answer),
     error: code === 0 ? null : errors.trim().split('\n').slice(-3).join(' ').slice(0, 300)
   }
 }

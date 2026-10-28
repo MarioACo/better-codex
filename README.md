@@ -179,7 +179,7 @@ The **guard** inspects every command and patch before it runs. It doesn't stop a
 
 It stops on:
 
-- **Deletes git can't undo**: whole folders, uncommitted or untracked files, paths outside the repo, wildcards, targets in variables, `find … -delete`, `shutil.rmtree`, `fs.rmSync(…, {recursive})`. Deleting `node_modules`, `dist`, `build`, logs, temp files, or files Codex created this session doesn't ask.
+- **Deletes git can't undo**: whole folders, uncommitted or untracked files, paths outside the repo, wildcards, targets in variables, `find … -delete`, `shutil.rmtree`, `fs.rmSync(…, {recursive})`. Deleting `node_modules`, caches, logs, or files Codex created this session doesn't ask. Neither do `dist`, `build`, `tmp` and the like, unless git shows uncommitted work of yours inside.
 - **Discarding your uncommitted work**: `reset --hard`, `checkout -- …`, `restore`, `clean -f`, `stash drop`, `worktree remove --force`. If only Codex's own changes from this session would be lost, it doesn't ask.
 - **Git history**: `push --force` (critical on main), `--mirror`, deleting remote branches or tags, `branch -D`, `filter-branch`.
 - **Secrets**: reading `.env`, keys, keystores or credentials (their contents would go to the model), dumping environment variables, overwriting secrets, adding them to git.
@@ -308,7 +308,7 @@ This removes the hooks, the `AGENTS.md` block, the marketplace and the installed
 ## Development
 
 ```bash
-npm test                       # 91 tests with node:test, no dependencies
+npm test                       # 93 tests with node:test, no dependencies
 npm run check                  # tests + offline doctor
 node scripts/codex-compat.mjs  # against your real Codex binary: no login, no model calls
 node bench/run.mjs             # the benchmark (uses your Codex quota)
