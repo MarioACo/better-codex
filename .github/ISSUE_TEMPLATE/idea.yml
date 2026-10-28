@@ -1,0 +1,15 @@
+name: Idea
+description: Something that would make Codex cheaper, sharper or safer. · Algo que haría a Codex más barato, más preciso o más seguro.
+labels: [idea]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What costs you tokens, time or a scare today? · ¿Qué te cuesta tokens, tiempo o un susto hoy?
+      description: A real case beats a general idea. Numbers from `bcx stats` or `bcx audit` help a lot. · Un caso real vale más que una idea general. Los números de `bcx stats` o `bcx audit` ayudan mucho.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you change? · ¿Qué cambiarías?

@@ -16,7 +16,7 @@ if (command === 'hook') {
   } catch {}
   const event = args[0] || input.hook_event_name
   try {
-    const [{ handle }, { stateFile }, { withLock }, { markSeen }] = await Promise.all([
+    const [{ handle, missingFields }, { stateFile }, { withLock }, { markSeen }] = await Promise.all([
       import('../src/hooks.js'),
       import('../src/state.js'),
       import('../src/util.js'),
@@ -24,7 +24,7 @@ if (command === 'hook') {
     ])
     // One hook at a time per session: parallel tool calls would otherwise overwrite each other's state.
     const out = withLock(stateFile(input.session_id), () => handle(event, input))
-    markSeen(event, input.tool_name)
+    markSeen(event, input.tool_name, missingFields(event, input))
     // Exit only once stdout is flushed: pipes can be asynchronous (macOS).
     if (out) await new Promise(done => process.stdout.write(JSON.stringify(out), done))
   } catch (error) {
@@ -52,7 +52,7 @@ const option = (name, fallback) => {
   return i !== -1 && args[i + 1] ? args[i + 1] : fallback
 }
 const positional = () => args.filter((a, i) => !a.startsWith('--') && !(i > 0 && /^--(days|cwd)$/.test(args[i - 1])))
-const mark = status => (status === 'ok' ? green('✓') : status === 'warn' ? yellow('!') : red('✗'))
+const mark = status => (status === 'ok' ? green('✓') : status === 'warn' ? yellow('!') : status === 'info' ? dim('·') : red('✗'))
 const bar = (pct, width = 20) => {
   const filled = Math.round((Math.min(100, Math.max(0, pct)) / 100) * width)
   const paintBar = pct >= cfg.rateCritical ? red : pct >= cfg.rateWarn ? yellow : green
@@ -136,6 +136,7 @@ const commands = {
       for (const l of live) {
         const tools = l.tools?.length ? dim(`  ${l.tools.slice(0, 4).map(([name, n]) => `${name}×${n}`).join(' ')}`) : ''
         console.log(`  ${mark(l.count ? 'ok' : 'warn')} ${l.event.padEnd(17)} ${l.count ? `${l.count}× · ${ago(l.ago)}` : dim(L('nunca', 'never'))}${tools}`)
+        if (l.missing) console.log(yellow(`      ${L('faltó en lo que envió Codex', 'missing from what Codex sent')}: ${l.missing.map(([f, n]) => `${f}×${n}`).join(' ')} · ${ago(l.missingAgo)}`))
       }
     }
     const failed = checks.some(c => c.status === 'fail') || smoke.some(r => !r.ok)

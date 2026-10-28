@@ -1,0 +1,46 @@
+name: codex
+
+# The real Codex binary, with no login and no model calls: does it still load the rules, the skills and
+# the hooks, and run them? Weekly too, so a new Codex release that breaks something shows up here first.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  compat:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        codex: [tested, latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Codex (${{ matrix.codex }})
+        shell: bash
+        run: |
+          if [ "${{ matrix.codex }}" = tested ]; then version=$(node -p "require('./package.json').codexTested"); else version=latest; fi
+          npm install -g "@openai/codex@$version"
+          codex --version
+      - run: node scripts/codex-compat.mjs
+      - name: Open an issue when a new Codex breaks it
+        if: failure() && github.event_name == 'schedule' && matrix.codex == 'latest'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Codex $(codex --version | awk '{print $NF}') breaks better-codex on ${{ runner.os }}"
+          open=$(gh issue list --repo "${{ github.repository }}" --label codex-compat --state open --search "\"$title\" in:title" --json number --jq length)
+          [ "$open" = 0 ] && gh issue create --repo "${{ github.repository }}" --label codex-compat --title "$title" --body "The weekly check against the latest Codex failed: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          true

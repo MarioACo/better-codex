@@ -1,0 +1,45 @@
+name: The guard got it wrong · El guard se equivocó
+description: It blocked something harmless, or let something risky through. · Bloqueó algo inofensivo, o dejó pasar algo riesgoso.
+labels: [guard]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If it let through something that **deletes data or leaks secrets**, report it privately instead: **Security → Report a vulnerability**. · Si dejó pasar algo que **borra datos o filtra secretos**, repórtalo en privado: **Security → Report a vulnerability**.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What went wrong? · ¿Qué salió mal?
+      options:
+        - It blocked something harmless · Bloqueó algo inofensivo
+        - It let something risky through · Dejó pasar algo riesgoso
+        - It asked twice for the same thing · Preguntó dos veces lo mismo
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: The exact command or patch · El comando o patch exacto
+      description: Replace private paths or names if you need to, but keep the shape (flags, quotes, variables). · Cambia rutas o nombres privados si hace falta, pero conserva la forma (flags, comillas, variables).
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it's wrong · Por qué está mal
+      description: What the command really does, and what the guard should have done. · Qué hace de verdad el comando y qué debió hacer el guard.
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: The matching lines of `bcx log` · Las líneas de `bcx log` que correspondan
+      render: text
+  - type: input
+    id: versions
+    attributes:
+      label: better-codex, Codex and OS versions · Versiones de better-codex, Codex y sistema
+      placeholder: better-codex 0.1.0 · Codex 0.164.0 · Windows 11 + PowerShell
+    validations:
+      required: true

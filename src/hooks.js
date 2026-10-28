@@ -18,6 +18,16 @@ import { gateReason, trackTool } from './verify.js'
 
 export const EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop']
 
+// Fields every event has carried so far. One that goes missing means Codex changed its hook format.
+const FIELDS = {
+  SessionStart: ['session_id', 'cwd', 'source'],
+  UserPromptSubmit: ['session_id', 'cwd', 'turn_id', 'prompt'],
+  PreToolUse: ['session_id', 'cwd', 'turn_id', 'tool_name', 'tool_input', 'tool_use_id'],
+  PostToolUse: ['session_id', 'cwd', 'turn_id', 'tool_name', 'tool_input', 'tool_response', 'tool_use_id'],
+  Stop: ['session_id', 'cwd', 'turn_id', 'last_assistant_message']
+}
+export const missingFields = (event, input) => (FIELDS[event] || []).filter(field => input?.[field] === undefined)
+
 const addContext = (event, text) => ({ hookSpecificOutput: { hookEventName: event, additionalContext: text } })
 const deny = reason => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } })
 

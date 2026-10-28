@@ -4,9 +4,9 @@ import { readJson, withLock, writeJson } from './util.js'
 
 const file = () => join(dataDir(), 'seen.json')
 
-// Which events Codex really sent, how often, when last, and with which tools: proof that the hooks are live
-// and that tool names are the ones the matchers expect.
-export function markSeen(event, toolName) {
+// Which events Codex really sent, how often, when last, with which tools, and which expected fields
+// were missing: proof that the hooks are live and that Codex still sends what they read.
+export function markSeen(event, toolName, missing = []) {
   if (process.env.BCX_NO_METRICS || !event) return
   try {
     withLock(
@@ -17,6 +17,11 @@ export function markSeen(event, toolName) {
         entry.count += 1
         entry.last = Date.now()
         if (toolName) entry.tools[toolName] = (entry.tools[toolName] || 0) + 1
+        if (missing.length) {
+          entry.missing ??= {}
+          for (const field of missing) entry.missing[field] = (entry.missing[field] || 0) + 1
+          entry.missingLast = entry.last
+        }
         writeJson(file(), seen)
       },
       { waitMs: 300 }

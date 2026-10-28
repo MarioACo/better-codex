@@ -1,0 +1,51 @@
+name: Bug / Error
+description: Something in better-codex doesn't work. · Algo de better-codex no funciona.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting it. English or Spanish, whichever you prefer. · Gracias por reportarlo. En inglés o en español, como prefieras.
+
+        **Is it a gap that lets something serious through without asking** (deleting data, leaking secrets)? Report it privately instead: **Security → Report a vulnerability**. · **¿Es un hueco que deja pasar algo grave sin preguntar** (borrar datos, filtrar secretos)? Repórtalo en privado: **Security → Report a vulnerability**.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened? · ¿Qué pasó?
+      description: What you did, what you expected and what happened instead. · Qué hiciste, qué esperabas y qué pasó en cambio.
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `bcx doctor` · Salida de `bcx doctor`
+      description: Run `node bin/bcx.js doctor` (or `bcx doctor`) and paste everything. It includes your Codex version and what Codex has actually sent to the hooks. · Ejecuta `node bin/bcx.js doctor` (o `bcx doctor`) y pega todo. Incluye tu versión de Codex y lo que Codex ha enviado de verdad a los hooks.
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where do you use Codex? · ¿Dónde usas Codex?
+      multiple: true
+      options:
+        - CLI (codex)
+        - codex exec
+        - VS Code / Cursor / Windsurf extension
+        - Desktop app · App de escritorio
+        - WSL
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system and shell · Sistema operativo y shell
+      placeholder: Windows 11 + PowerShell, macOS 15 + zsh, Ubuntu 24.04 + bash…
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Output of `bcx log` (optional) · Salida de `bcx log` (opcional)
+      description: What the hooks did recently. It shows commands and paths, never prompts or file contents. Remove anything you don't want to share. · Lo que hicieron los hooks hace poco. Muestra comandos y rutas, nunca prompts ni contenido de archivos. Quita lo que no quieras compartir.
+      render: text

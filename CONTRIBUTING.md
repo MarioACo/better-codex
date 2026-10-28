@@ -26,6 +26,27 @@ Several bugs only showed up this way:
 - `npm.cmd test` not counting as a check;
 - shell calls that failed in every session.
 
+## A new Codex release
+
+Codex is still in alpha, and a release can change what better-codex relies on. Two checks, from cheapest to most thorough:
+
+```bash
+node scripts/codex-compat.mjs     # the real Codex, no login, no model calls: rules, skills and hooks loaded and run
+node bench/run.mjs --runs 1       # real sessions with and without better-codex (uses your Codex quota)
+```
+
+CI runs `codex-compat` on Linux, macOS and Windows against the version in `codexTested` (package.json) and against the latest one, every week. Once a new version passes both checks, update `codexTested`: `bcx doctor` compares the installed Codex against it.
+
+## Benchmark
+
+`node bench/run.mjs` runs the same tasks with plain Codex and with better-codex, in fresh copies of a small repo ([bench/fixture](bench/fixture)), and grades each run with a check Codex never sees ([bench/tasks.mjs](bench/tasks.mjs)). A good new task:
+
+- is something people really ask Codex for;
+- has a check that doesn't depend on wording (hidden tests, files on disk, a git status);
+- would be done right by a careful developer, so it measures Codex and not the task.
+
+Results go to `bench/results/`. Commit them along with any change to the README table they back.
+
 ## Guard rules
 
 Every new rule comes with tests in [test/guard.test.js](test/guard.test.js) for both sides:

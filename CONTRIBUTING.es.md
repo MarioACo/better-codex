@@ -26,6 +26,27 @@ Varios bugs solo aparecieron así:
 - `npm.cmd test`, que no contaba como verificación;
 - llamadas a la terminal que fallaban en cada sesión.
 
+## Una versión nueva de Codex
+
+Codex sigue en alpha, y una versión nueva puede cambiar algo de lo que depende better-codex. Dos comprobaciones, de la más barata a la más completa:
+
+```bash
+node scripts/codex-compat.mjs     # el Codex real, sin login ni llamadas al modelo: reglas, skills y hooks cargados y ejecutados
+node bench/run.mjs --runs 1       # sesiones reales con y sin better-codex (gasta cuota de tu Codex)
+```
+
+La CI corre `codex-compat` en Linux, macOS y Windows con la versión de `codexTested` (package.json) y con la más reciente, cada semana. Cuando una versión nueva pase las dos comprobaciones, actualiza `codexTested`: `bcx doctor` compara contra ella el Codex instalado.
+
+## Benchmark
+
+`node bench/run.mjs` corre las mismas tareas con Codex solo y con better-codex, en copias nuevas de un repo pequeño ([bench/fixture](bench/fixture)), y califica cada corrida con una comprobación que Codex nunca ve ([bench/tasks.mjs](bench/tasks.mjs)). Una buena tarea nueva:
+
+- es algo que la gente de verdad le pide a Codex;
+- tiene una comprobación que no depende de cómo se redacte la respuesta (pruebas ocultas, archivos en disco, un git status);
+- la haría bien un desarrollador cuidadoso, así que mide a Codex y no a la tarea.
+
+Los resultados van a `bench/results/`. Haz commit de ellos junto con cualquier cambio a la tabla del README que respalden.
+
 ## Reglas del guard
 
 Cada regla nueva lleva pruebas en [test/guard.test.js](test/guard.test.js) de las dos caras:

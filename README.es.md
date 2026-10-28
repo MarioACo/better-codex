@@ -3,6 +3,7 @@
 [English](README.md) · **Español**
 
 [![CI](https://github.com/MarioACo/better-codex/actions/workflows/test.yml/badge.svg)](https://github.com/MarioACo/better-codex/actions/workflows/test.yml)
+[![Codex compat](https://github.com/MarioACo/better-codex/actions/workflows/codex.yml/badge.svg)](https://github.com/MarioACo/better-codex/actions/workflows/codex.yml)
 [![Licencia: MIT](https://img.shields.io/badge/licencia-MIT-blue)](LICENSE)
 ![Node 20+](https://img.shields.io/badge/node-%3E%3D20-339933)
 ![Sin dependencias](https://img.shields.io/badge/dependencias-0-brightgreen)
@@ -97,7 +98,7 @@ better-codex vive en `~/.codex` (hooks, reglas y skills), y todo Codex local lee
 
 | Codex | Funciona | Notas |
 | --- | --- | --- |
-| CLI (`codex`, `codex exec`) | ✓ | Verificado en vivo con Codex 0.164. |
+| CLI (`codex`, `codex exec`) | ✓ | Verificado en vivo con Codex 0.164 en Windows. |
 | Extensión de VS Code | ✓ | Mismo motor y misma `~/.codex`. `install` también encuentra el CLI que trae dentro, así que puedes aprobar los hooks desde ahí. |
 | Cursor, Windsurf, VS Code Insiders | ✓ | Usan la misma extensión de OpenAI. |
 | App de escritorio | ✓ | Mismo motor y misma `~/.codex`. |
@@ -105,6 +106,8 @@ better-codex vive en `~/.codex` (hooks, reglas y skills), y todo Codex local lee
 | Codex Cloud (tareas en la nube) | ✗ | Corre en los servidores de OpenAI y nunca lee tu `~/.codex`. |
 
 Los hooks solo corren después de aprobarlos una vez en `/hooks`. Hasta entonces, todos se los saltan sin avisar.
+
+**Linux y macOS:** cada semana, y con cada cambio, la CI instala el Codex real (la versión probada y la más reciente) en Linux, macOS y Windows, y comprueba que carga las reglas, los skills y los cinco hooks, y que cada hook corre en las terminales de ese sistema ([scripts/codex-compat.mjs](scripts/codex-compat.mjs)). Si lo usas en una Mac, la salida de `bcx doctor` en un issue ayuda mucho.
 
 ## Qué hace
 
@@ -185,7 +188,7 @@ bcx stats     # tokens, caché, contexto medio y pico, herramientas por turno, p
 bcx usage     # tus límites de 5 horas y semanal, y cuándo se reinician
 bcx audit     # repasa sesiones pasadas: qué habría detenido el guard y qué habría ahorrado la dieta
 bcx log       # lo último que hizo better-codex: bloqueos, aprobaciones, lecturas evitadas, verificaciones pedidas
-bcx doctor    # revisión de la instalación, hooks ejecutados en tus terminales, y lo que Codex ha enviado de verdad
+bcx doctor    # revisión de la instalación, lo que dice el propio Codex de los hooks (cargados, aprobados), hooks ejecutados en tus terminales, y lo que Codex ha enviado de verdad
 bcx brief     # el brief que recibe Codex en este repo, y su costo en tokens
 bcx try "+arregla el login que truena"   # lo que se agregaría a ese prompt
 ```
@@ -236,6 +239,9 @@ bcx config reset
 | «this CLI has no complete local package» | El CLI que trae la app de escritorio necesita `--no-daemon`; o usa el de la extensión de VS Code (ver [Empieza en un minuto](#empieza-en-un-minuto)). |
 | `codex exec`: «Code Mode is unavailable … host executable was not found» | Es el CLI de la app de escritorio, al que le falta el host de code mode. Usa el `codex` de la extensión de VS Code, que sí lo trae. |
 | El guard detuvo algo inofensivo | `bcx guard "<comando>"` explica por qué. Los falsos positivos son bugs: por favor [abre un issue](https://github.com/MarioACo/better-codex/issues). |
+| `bcx doctor`: «marketplace not registered» | Vuelve a correr `bcx install`. Registra otra vez los skills, y tu aprobación de los hooks sigue válida. |
+| `bcx doctor`: «newer than the last one better-codex was tested with» | Normalmente no pasa nada. Si algo deja de funcionar, [abre un issue](https://github.com/MarioACo/better-codex/issues) con la salida de `bcx doctor`. |
+| `bcx doctor`: «hook format» | Codex dejó de mandar un campo que leen los hooks: seguramente cambió su formato. Abre un issue con la salida de `bcx doctor`, por favor. |
 | Algo no cuadra | `bcx log` y `bcx doctor` muestran los errores internos. Si un hook falla, Codex sigue como si no existiera. |
 
 ## Cómo funciona
@@ -247,7 +253,7 @@ En cada evento, Codex ejecuta `node …/bin/bcx.js hook <Evento>`. Le pasa el ev
 - **No se cruza con Codex.** Sus `git status` no toman `index.lock`, así que nunca chocan con los comandos de git del propio Codex.
 - **Seguro con llamadas en paralelo.** Los hooks de una misma sesión se turnan con un candado, así que no se pisan el estado. Un candado que se queda colgado se libera a los 5 s.
 - **Rutas correctas.** Las rutas se comparan ya resueltas, así que un enlace simbólico como `/var` → `/private/var` en macOS no hace que un archivo dentro del repo parezca estar fuera.
-- **Probado contra Codex de verdad.** Además de las pruebas, cada cambio de comportamiento se verifica en sesiones reales de Codex sobre un repo desechable.
+- **Probado contra Codex de verdad.** Además de las pruebas, cada cambio de comportamiento se verifica en sesiones reales de Codex sobre un repo desechable, y la CI revisa el binario real de Codex cada semana ([codex-compat](scripts/codex-compat.mjs)).
 
 ```text
 bin/bcx.js        CLI y punto de entrada de los hooks

@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { existsSync, utimesSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { samplePayload } from '../src/doctor.js'
+import { EVENTS, missingFields } from '../src/hooks.js'
 import { readSeen, markSeen } from '../src/seen.js'
 import { withLock } from '../src/util.js'
 import { isolate, tempDir } from './helpers.js'
@@ -38,4 +40,16 @@ test('markSeen: counts events and tool names Codex really sent', () => {
   assert.equal(seen.PreToolUse.count, 3)
   assert.deepEqual(seen.PreToolUse.tools, { exec: 2, apply_patch: 1 })
   assert.equal(seen.Stop.count, 1)
+})
+
+test('markSeen: remembers the expected fields Codex stopped sending', () => {
+  isolate()
+  const input = { session_id: 's', cwd: '/repo', turn_id: 't', tool_name: 'Bash', tool_input: { command: 'ls' } }
+  markSeen('PreToolUse', 'Bash', missingFields('PreToolUse', input))
+  markSeen('PreToolUse', 'Bash', missingFields('PreToolUse', { ...input, tool_use_id: 'u' }))
+  const seen = readSeen()
+  assert.deepEqual(seen.PreToolUse.missing, { tool_use_id: 1 })
+  assert.ok(seen.PreToolUse.missingLast > 0)
+  // The payloads doctor sends carry every field, so they never look like a format change.
+  for (const event of EVENTS) assert.deepEqual(missingFields(event, samplePayload(event)), [], event)
 })
