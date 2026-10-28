@@ -363,6 +363,9 @@ async function main() {
       // Alternate the order so neither mode always runs first.
       for (const mode of rep % 2 ? modes : [...modes].reverse()) {
         if (results.runs.some(r => r.task === task.id && r.mode === mode && r.rep === rep)) continue
+        // A Codex window left open for hours can rewrite config.toml without our marketplace: every "on" run would be invalid.
+        if (mode === 'on' && !/^\[marketplaces\.better-codex\]/m.test(readText(join(codexHome(), 'config.toml'), '')))
+          fail(`the better-codex marketplace is gone from ${join(codexHome(), 'config.toml')} (an old Codex window may have rewritten it). Close it, run bcx install, and continue with --resume.`)
         const r = await runOnce(codex, task, mode, rep)
         results.runs.push(r)
         writeFileSync(out, `${JSON.stringify(results, null, 2)}\n`)
