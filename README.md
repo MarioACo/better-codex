@@ -91,6 +91,21 @@ Both include a Codex CLI, but it isn't on your `PATH`. Open it in one of these w
 
 To update: `git pull`, then `node bin/bcx.js install` again. As long as `hooks.json` doesn't change, Codex doesn't ask you to trust the hooks again. To get a `bcx` command you can run from any folder, run `npm link` in the repo.
 
+## Where it works
+
+better-codex lives in `~/.codex` (hooks, rules, skills), and every local Codex reads that folder. So it works wherever Codex runs on your machine:
+
+| Codex | Works | Notes |
+| --- | --- | --- |
+| CLI (`codex`, `codex exec`) | ✓ | Verified live with Codex 0.164. |
+| VS Code extension | ✓ | Same engine and same `~/.codex`. `install` also finds the CLI inside it, so you can trust the hooks from there. |
+| Cursor, Windsurf, VS Code Insiders | ✓ | They use the same OpenAI extension. |
+| Desktop app | ✓ | Same engine and same `~/.codex`. |
+| Codex inside WSL | ✓, separately | WSL has its own home folder: install better-codex inside WSL too. |
+| Codex Cloud (cloud tasks) | ✗ | Runs on OpenAI's servers and never reads your `~/.codex`. |
+
+Hooks only run after you trust them once in `/hooks`. Until then, every one of these skips them without saying so.
+
 ## Features
 
 | When | Feature | What it does |
@@ -264,7 +279,7 @@ This removes the hooks, the `AGENTS.md` block, the marketplace and the installed
 ## Development
 
 ```bash
-npm test          # 83 tests with node:test, no dependencies
+npm test          # 84 tests with node:test, no dependencies
 npm run check     # tests + offline doctor
 ```
 

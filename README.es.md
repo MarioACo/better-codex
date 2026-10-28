@@ -91,6 +91,21 @@ Las dos traen un CLI de Codex, pero no está en tu `PATH`. Ábrelo de alguna de 
 
 Para actualizar: `git pull` y luego `node bin/bcx.js install` otra vez. Mientras `hooks.json` no cambie, Codex no te pide aprobar los hooks de nuevo. Para tener un comando `bcx` que funcione desde cualquier carpeta, ejecuta `npm link` dentro del repo.
 
+## Dónde funciona
+
+better-codex vive en `~/.codex` (hooks, reglas y skills), y todo Codex local lee esa carpeta. Por eso funciona en cualquier Codex que corra en tu máquina:
+
+| Codex | Funciona | Notas |
+| --- | --- | --- |
+| CLI (`codex`, `codex exec`) | ✓ | Verificado en vivo con Codex 0.164. |
+| Extensión de VS Code | ✓ | Mismo motor y misma `~/.codex`. `install` también encuentra el CLI que trae dentro, así que puedes aprobar los hooks desde ahí. |
+| Cursor, Windsurf, VS Code Insiders | ✓ | Usan la misma extensión de OpenAI. |
+| App de escritorio | ✓ | Mismo motor y misma `~/.codex`. |
+| Codex dentro de WSL | ✓, por separado | WSL tiene su propia carpeta de usuario: instala better-codex también dentro de WSL. |
+| Codex Cloud (tareas en la nube) | ✗ | Corre en los servidores de OpenAI y nunca lee tu `~/.codex`. |
+
+Los hooks solo corren después de aprobarlos una vez en `/hooks`. Hasta entonces, todos se los saltan sin avisar.
+
 ## Qué hace
 
 | Momento | Función | Qué hace |
@@ -264,7 +279,7 @@ Quita los hooks, el bloque de `AGENTS.md`, el marketplace y la copia instalada, 
 ## Desarrollo
 
 ```bash
-npm test          # 83 pruebas con node:test, sin dependencias
+npm test          # 84 pruebas con node:test, sin dependencias
 npm run check     # pruebas + doctor sin red
 ```
 

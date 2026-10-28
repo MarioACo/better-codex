@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { smokeTest } from '../src/doctor.js'
-import { agentsPath, appDir, blockOf, hasOurHooks, hookCommand, hooksPath, hookTrust, install, installedCommand, mergeHooks, removeHooks, tuiCommand, uninstall, withBlock, withoutBlock } from '../src/install.js'
+import { agentsPath, appDir, blockOf, hasOurHooks, hookCommand, extensionCodex, hooksPath, hookTrust, install, installedCommand, mergeHooks, removeHooks, tuiCommand, uninstall, withBlock, withoutBlock } from '../src/install.js'
 import { toPosix } from '../src/util.js'
 import { isolate, tempDir } from './helpers.js'
 
@@ -140,3 +140,23 @@ test('install knows when you already trusted the hooks, and when a change needs 
 })
 
 const readJsonFile = path => JSON.parse(readFileSync(path, 'utf8'))
+
+test('finds the Codex CLI inside the VS Code, Cursor or Windsurf extension, newest first', () => {
+  const home = tempDir()
+  const exe = process.platform === 'win32' ? 'codex.exe' : 'codex'
+  const fake = path => {
+    mkdirSync(join(home, path), { recursive: true })
+    writeFileSync(join(home, path, exe), '')
+    return join(home, path, exe)
+  }
+  const old = fake('.vscode/extensions/openai.chatgpt-26.900.1-win32-x64/bin/windows-x86_64')
+  const newest = fake('.vscode/extensions/openai.chatgpt-26.1021.22027-win32-x64/bin/windows-x86_64')
+  const cursor = fake('.cursor/extensions/openai.chatgpt-26.1000.5-darwin-arm64/bin/macos-aarch64')
+  mkdirSync(join(home, '.windsurf/extensions/someone.else-1.0.0/bin/x'), { recursive: true })
+  assert.deepEqual(extensionCodex(home), [newest, cursor, old])
+  assert.deepEqual(extensionCodex(tempDir()), [])
+  // the extension's CLI is complete: no --no-daemon needed to open /hooks
+  assert.doesNotMatch(tuiCommand({ bin: newest }), /--no-daemon/)
+  assert.match(tuiCommand({ bin: newest }), /codex(\.exe)?"$/)
+  assert.equal(tuiCommand({ bin: 'cmd.exe', prefix: ['/d', '/s', '/c', 'codex'] }), 'codex')
+})

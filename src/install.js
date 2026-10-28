@@ -161,13 +161,38 @@ function backup(file) {
   return target
 }
 
-// Codex as a CLI on PATH (npm: codex.cmd on Windows), or the binary the desktop app keeps in ~/.codex.
+// The complete Codex CLI inside OpenAI's extension for VS Code and its forks, newest first.
+// They all share ~/.codex with the desktop app and the CLI, so hooks, rules and skills apply to all.
+export function extensionCodex(home = homedir()) {
+  const exe = process.platform === 'win32' ? 'codex.exe' : 'codex'
+  const found = []
+  for (const editor of ['.vscode', '.vscode-insiders', '.cursor', '.windsurf', '.vscode-oss']) {
+    const dir = join(home, editor, 'extensions')
+    const extensions = existsSync(dir) ? readdirSync(dir).filter(name => /^openai\.chatgpt-\d/.test(name)) : []
+    for (const name of extensions) {
+      const binDir = join(dir, name, 'bin')
+      for (const platform of existsSync(binDir) ? readdirSync(binDir) : []) {
+        const bin = join(binDir, platform, exe)
+        if (existsSync(bin)) found.push({ bin, version: /-(\d+(?:\.\d+)*)/.exec(name)[1].split('.').map(Number) })
+      }
+    }
+  }
+  const newer = (a, b) => {
+    for (let i = 0; i < Math.max(a.length, b.length); i++) if ((a[i] || 0) !== (b[i] || 0)) return (b[i] || 0) - (a[i] || 0)
+    return 0
+  }
+  return found.sort((a, b) => newer(a.version, b.version)).map(f => f.bin)
+}
+
+// Codex as a CLI on PATH (npm: codex.cmd on Windows), the one inside an editor extension,
+// or the binary the desktop app keeps in ~/.codex.
 export function findCodex() {
   const windows = process.platform === 'win32'
   const candidates = [
     process.env.BCX_CODEX && { bin: process.env.BCX_CODEX },
     { bin: 'codex' },
     windows && { bin: 'cmd.exe', prefix: ['/d', '/s', '/c', 'codex'] },
+    ...extensionCodex().map(bin => ({ bin })),
     ...[...new Set([codexHome(), join(homedir(), '.codex')])].map(home => ({ bin: join(home, '.sandbox-bin', windows ? 'codex.exe' : 'codex') }))
   ].filter(Boolean)
   for (const candidate of candidates) {
@@ -182,8 +207,9 @@ export const runCodex = (codex, args, timeout = 60000) => run(codex.bin, [...(co
 // What the user types to open the Codex TUI (where /hooks lives). The CLI bundled with the
 // desktop app refuses to start without its background server unless given --no-daemon.
 export function tuiCommand(codex) {
-  if (!codex || !/[\\/]\.sandbox-bin[\\/]/.test(codex.bin)) return 'codex'
-  return process.platform === 'win32' ? `& "${codex.bin}" --no-daemon` : `"${codex.bin}" --no-daemon`
+  if (!codex || codex.prefix || !/[\\/]/.test(codex.bin)) return 'codex'
+  const flag = /[\\/]\.sandbox-bin[\\/]/.test(codex.bin) ? ' --no-daemon' : ''
+  return process.platform === 'win32' ? `& "${codex.bin}"${flag}` : `"${codex.bin}"${flag}`
 }
 
 // Where Codex reads the better-codex marketplace from, or null when it is not registered.
