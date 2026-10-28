@@ -16,7 +16,9 @@ export const DEFAULTS = Object.freeze({
   ctxWarn: 60,
   ctxCritical: 80,
   rateWarn: 75,
-  rateCritical: 90
+  rateCritical: 90,
+  // Saves the last payload of each event to ~/.codex/better-codex/debug/ (local only, overwritten each time).
+  debug: false
 })
 
 const CHOICES = { lang: ['auto', 'es', 'en'], meter: ['warn', 'always', 'off'] }

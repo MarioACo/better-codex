@@ -1,17 +1,19 @@
 import { repoBrief } from './brief.js'
 import { loadConfig } from './config.js'
 import { dietCheck } from './diet.js'
-import { gitFiles, gitRoot } from './git.js'
+import { gitFiles, gitRoot, knownRoots, rememberRoots } from './git.js'
 import { askedFor, denyReason, gitStatusMap, inspect, isApproval, norm, RULES, sameAction } from './guard.js'
 import { pick, resolveLang } from './i18n.js'
 import { meterCheck } from './meter.js'
 import { record } from './metrics.js'
 import { detectProject } from './project.js'
 import { boostPrompt } from './prompt.js'
-import { extractWorkdir } from './shell.js'
+import { extractWorkdir, toolCommands } from './shell.js'
+import { duration, rememberSlow, SLOW_SECONDS } from './slow.js'
 import { loadState, pruneStates, saveState } from './state.js'
 import { readUsage } from './transcript.js'
-import { clip, estimateTokens } from './util.js'
+import { dataDir } from './paths.js'
+import { clip, estimateTokens, writeJson } from './util.js'
 import { gateReason, trackTool } from './verify.js'
 
 export const EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop']
@@ -69,7 +71,9 @@ function onUserPromptSubmit(input, cfg, cwd) {
     })
   }
 
+  rememberRoots(state.roots)
   const root = safely(() => gitRoot(cwd))
+  state.roots = knownRoots()
   if (cfg.guard && root) {
     // Changes Codex did not make in this session are yours: the guard protects them.
     safely(() => {
@@ -88,6 +92,7 @@ function onUserPromptSubmit(input, cfg, cwd) {
     seq: 0,
     lastEdit: 0,
     lastVerify: 0,
+    verifyFailed: null,
     edited: [],
     gateFired: false,
     bigOutputWarned: false,
@@ -118,7 +123,13 @@ function onPreToolUse(input, cfg, cwd) {
   const workdir = extractWorkdir(toolInput, cwd)
 
   if (cfg.guard) {
+    rememberRoots(state.roots)
     const found = safely(() => inspect({ toolName, toolInput, cwd: workdir, created: state.created, touched: state.touched, userDirty: state.userDirty }))
+    const roots = knownRoots()
+    if (JSON.stringify(roots) !== JSON.stringify(state.roots)) {
+      state.roots = roots
+      saveState(input.session_id, state)
+    }
     if (found) {
       const guard = state.guard
       const thisTurn = guard.approvedTurn === '*' || guard.approvedTurn === input.turn_id
@@ -144,15 +155,42 @@ function onPreToolUse(input, cfg, cwd) {
       return deny(found.reason)
     }
   }
+
+  // Codex calls PostToolUse when the command ends, even minutes later: the gap is how long it ran.
+  if (input.tool_use_id) {
+    state.started = Object.fromEntries([...Object.entries(state.started || {}).slice(-19), [input.tool_use_id, Date.now()]])
+    saveState(input.session_id, state)
+  }
   return null
 }
 
 function onPostToolUse(input, cfg, cwd) {
   const state = loadState(input.session_id)
   const toolInput = input.tool_input
-  safely(() => trackTool(state, { toolName: input.tool_name, toolInput, cwd: extractWorkdir(toolInput, cwd), verifyCmd: state.verifyCmd }))
+  safely(() => trackTool(state, { toolName: input.tool_name, toolInput, cwd: extractWorkdir(toolInput, cwd), verifyCmd: state.verifyCmd, output: input.tool_response }))
 
   let out = null
+  const startedAt = state.started?.[input.tool_use_id]
+  if (startedAt) {
+    delete state.started[input.tool_use_id]
+    const seconds = (Date.now() - startedAt) / 1000
+    const [command] = toolCommands(input.tool_name, toolInput)
+    if (seconds >= SLOW_SECONDS && command) {
+      safely(() => {
+        rememberRoots(state.roots)
+        const workdir = extractWorkdir(toolInput, cwd)
+        rememberSlow(gitRoot(workdir) || workdir, command, seconds)
+        record('slow', { seconds: Math.round(seconds), command: command.slice(0, 160) })
+        if (!state.slowWarned.includes(command)) {
+          state.slowWarned.push(command)
+          out = addContext(
+            'PostToolUse',
+            `[better-codex] \`${clip(command, 120)}\` took ${duration(seconds)}. Next time run it and poll it inside one exec (the loop in AGENTS.md) instead of separate waits: every poll resends the whole context.`
+          )
+        }
+      })
+    }
+  }
   if (cfg.bigOutputKB > 0 && !state.bigOutputWarned) {
     const size = safely(() => JSON.stringify(input.tool_response ?? '').length, 0)
     if (size > cfg.bigOutputKB * 1024) {
@@ -194,8 +232,13 @@ function onStop(input, cfg, lang) {
       state.gateFired = true
       out.decision = 'block'
       out.reason = reason
-      record('verify-gate', {})
-      messages.push(pick(lang, `better-codex: le pedí a Codex verificar con \`${state.verifyCmd}\` antes de terminar.`, `better-codex: asked Codex to verify with \`${state.verifyCmd}\` before finishing.`))
+      const failed = state.lastVerify >= state.lastEdit && state.verifyFailed
+      record('verify-gate', { failed: !!failed })
+      messages.push(
+        failed
+          ? pick(lang, `better-codex: la verificación falló («${failed}»); le pedí a Codex arreglarla o explicarla antes de terminar.`, `better-codex: the check failed ("${failed}"); asked Codex to fix or explain it before finishing.`)
+          : pick(lang, `better-codex: le pedí a Codex verificar con \`${state.verifyCmd}\` antes de terminar.`, `better-codex: asked Codex to verify with \`${state.verifyCmd}\` before finishing.`)
+      )
     }
   }
 
@@ -219,6 +262,7 @@ function onStop(input, cfg, lang) {
 // Entry point for `bcx hook <Event>`: the JSON Codex expects on stdout, or null for "nothing to add".
 export function handle(event, input, cfg = loadConfig()) {
   const cwd = input.cwd || process.cwd()
+  if (cfg.debug) safely(() => writeJson(`${dataDir()}/debug/${event}.json`, input))
   switch (event) {
     case 'SessionStart':
       return onSessionStart(input, cfg, cwd)

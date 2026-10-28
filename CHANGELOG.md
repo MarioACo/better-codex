@@ -12,6 +12,10 @@ Found by testing against real Codex 0.164 (VS Code extension, Windows):
 - **Install**: prints the exact command to open Codex and trust the hooks (`--no-daemon` for the CLI that ships with the desktop app). It no longer mistakes `[hooks.state]` in `config.toml` for a second set of hooks.
 - **doctor / log**: they say what's actually missing, and tell "allowed" apart from "ran".
 - **Install and doctor know when you already trusted the hooks** (from Codex's trust records in `config.toml`). `install` only asks you to trust them again when they actually changed, and `doctor` shows `trusted 5/5`.
+- **Slow commands**: better-codex times every command. One that took over 30 s is pointed out to Codex once and remembered per repo, and the next session's brief lists it, so Codex runs it and waits for it inside one call. Live, on a 75 s test run: 5 requests → 2, input tokens −60%. `bcx stats` shows the share of input spent polling (27% across the author's sessions).
+- **Rules for Codex**: put independent reads in one call, and run and poll long commands inside one `exec` instead of separate waits.
+- **Verify gate checks the result**: if the last check after an edit failed (node:test, Jest, Vitest, Mocha, pytest, Go, Cargo, tsc, ESLint, Gradle, Maven, .NET, Karma, Angular, npm) and Codex's answer doesn't say so, it sends Codex back once to fix it or say it.
+- **Faster hooks**: the guard only asks git for the repo root when a rule needs it, and the session remembers it: about half of better-codex's own time per command.
 - **Docs**: README, contributing guide, security policy and changelog in English and Spanish. The README adds an animated demo of a real session (`scripts/demo-svg.mjs`), a troubleshooting section and a tip for turning off the skills of plugins you don't use.
 
 ## 0.1.0 — 2026-10-27

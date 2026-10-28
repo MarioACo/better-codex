@@ -30,6 +30,10 @@ export function parseSession(text) {
     tools: 0,
     compactions: 0,
     requests: 0,
+    // Requests whose only job was to ask whether a running command had finished.
+    pollRequests: 0,
+    pollInput: 0,
+    sumInput: 0,
     sumContext: 0,
     peakContext: 0,
     peakPct: 0,
@@ -37,6 +41,7 @@ export function parseSession(text) {
     total: null
   }
   let lastTotal = null
+  let polled = false
   for (const line of text.split('\n')) {
     const m = HEAD.exec(line)
     if (!m) continue
@@ -55,12 +60,21 @@ export function parseSession(text) {
         s.window = info.model_context_window || s.window
         const context = (last.input_tokens || 0) + (last.output_tokens || 0)
         s.requests++
+        s.sumInput += last.input_tokens || 0
+        if (polled) {
+          s.pollRequests++
+          s.pollInput += last.input_tokens || 0
+        }
+        polled = false
         s.sumContext += context
         s.peakContext = Math.max(s.peakContext, context)
         if (s.window) s.peakPct = Math.max(s.peakPct, Math.round((context / s.window) * 100))
       }
     } else if (type === 'response_item') {
-      if ((sub === 'function_call' || sub === 'custom_tool_call') && !POLLING.test(line.slice(0, 400))) s.tools++
+      if (sub === 'function_call' || sub === 'custom_tool_call') {
+        polled = POLLING.test(line.slice(0, 400))
+        if (!polled) s.tools++
+      }
     } else if (type === 'compacted') {
       s.compactions++
     } else if (type === 'session_meta') {
@@ -120,7 +134,9 @@ export function summarize(sessions) {
     toolsPerTurn: turns ? sum('tools') / turns : 0,
     avgContext: requests ? sum('sumContext') / requests : 0,
     avgPeakPct: sessions.length ? sessions.reduce((n, s) => n + s.peakPct, 0) / sessions.length : 0,
-    over70: sessions.filter(s => s.peakPct >= 70).length
+    over70: sessions.filter(s => s.peakPct >= 70).length,
+    pollRequests: sum('pollRequests'),
+    pollShare: sum('sumInput') ? sum('pollInput') / sum('sumInput') : 0
   }
 }
 
@@ -142,6 +158,14 @@ export function tips(summary, lang, sessions = []) {
       es
         ? `${summary.over70} de ${summary.sessions} sesiones pasaron del 70% de contexto: cada turno reenvía todo. Usa $bcx:handoff y una sesión nueva al ver el aviso amarillo.`
         : `${summary.over70} of ${summary.sessions} sessions went past 70% context: every turn resends all of it. Use $bcx:handoff and a fresh session at the yellow warning.`
+    )
+  }
+  if (summary.pollShare >= 0.1) {
+    const pct = Math.round(summary.pollShare * 100)
+    out.push(
+      es
+        ? `${pct}% de tu entrada (${summary.pollRequests} peticiones) se fue en preguntar si un comando largo ya había terminado. better-codex le enseña a Codex a esperarlos dentro de una sola llamada y recuerda cuáles son lentos en cada repo.`
+        : `${pct}% of your input (${summary.pollRequests} requests) went into asking whether a long command had finished. better-codex teaches Codex to wait for them inside one call and remembers which ones are slow in each repo.`
     )
   }
   if (summary.toolsPerTurn >= 12) {

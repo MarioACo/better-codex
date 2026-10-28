@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { DEFAULTS } from '../src/config.js'
 import { handle } from '../src/hooks.js'
+import { loadState, saveState } from '../src/state.js'
 import { readEvents } from '../src/metrics.js'
 import { isolate, repo, tempDir, write } from './helpers.js'
 import { ROLLOUT } from './fixtures.js'
@@ -165,4 +166,30 @@ test('guard: after a block, a yes also covers the literal command Codex then pro
   handle('Stop', { session_id: sid, turn_id: 't1', cwd: root, stop_hook_active: false, last_assistant_message: `Necesito ejecutar exactamente:\n\n\`Remove-Item -LiteralPath '${literal}' -Recurse -Force\`\n\n¿Confirmas este comando exacto?` }, cfg)
   handle('UserPromptSubmit', { session_id: sid, turn_id: 't2', cwd: root, prompt: 'sí' }, cfg)
   assert.equal(pre('t2', `Remove-Item -LiteralPath '${literal}' -Recurse -Force`), null)
+})
+
+test('a command that ran over 30 s is pointed out once, and the next session brief remembers it', () => {
+  const root = repo({ 'package.json': JSON.stringify({ name: 'demo', scripts: { test: 'node --test' } }) })
+  const sid = session()
+  const call = { session_id: sid, turn_id: 't1', cwd: root, tool_name: 'Bash', tool_use_id: 'u1', tool_input: { command: 'npm.cmd test' } }
+  handle('UserPromptSubmit', { session_id: sid, turn_id: 't1', cwd: root, prompt: 'corre los tests' }, cfg)
+  assert.equal(handle('PreToolUse', call, cfg), null)
+  // pretend it started 75 s ago
+  const state = loadState(sid)
+  state.started.u1 = Date.now() - 75_000
+  saveState(sid, state)
+  const post = handle('PostToolUse', { ...call, tool_response: 'ℹ fail 0' }, cfg)
+  assert.match(contextOf(post), /`npm\.cmd test` took ~75 s[\s\S]*one exec/)
+
+  // a quick command says nothing, and the same slow one is not pointed out twice
+  handle('PreToolUse', { ...call, tool_use_id: 'u2', tool_input: { command: 'git status' } }, cfg)
+  assert.equal(handle('PostToolUse', { ...call, tool_use_id: 'u2', tool_input: { command: 'git status' }, tool_response: '' }, cfg), null)
+  handle('PreToolUse', { ...call, tool_use_id: 'u3' }, cfg)
+  const again = loadState(sid)
+  again.started.u3 = Date.now() - 80_000
+  saveState(sid, again)
+  assert.equal(handle('PostToolUse', { ...call, tool_use_id: 'u3', tool_response: 'ok' }, cfg), null)
+
+  const brief = handle('SessionStart', { session_id: session(), cwd: root, source: 'startup' }, cfg)
+  assert.match(contextOf(brief), /slow here last time: `npm\.cmd test` ~80 s/)
 })

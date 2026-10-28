@@ -57,3 +57,23 @@ test('meter: warns once per level, says what to do, can be always or off', () =>
   assert.match(meterCheck(usage, { ...DEFAULTS, meter: 'always' }, first.levels, 'en').message, /usage 5 h 30%/)
   assert.equal(meterCheck(usage, { ...DEFAULTS, meter: 'off' }, {}, 'en').message, null)
 })
+
+test('stats: requests spent polling a running command are counted apart', () => {
+  const at = n => `2026-10-27T10:00:${String(n).padStart(2, '0')}.000Z`
+  const call = (n, name) => JSON.stringify({ timestamp: at(n), type: 'response_item', payload: { type: 'function_call', name, arguments: '{}' } })
+  const usage = (n, input, total) =>
+    JSON.stringify({ timestamp: at(n), type: 'event_msg', payload: { type: 'token_count', info: { last_token_usage: { input_tokens: input, output_tokens: 10 }, total_token_usage: { input_tokens: total, total_tokens: total } } } })
+  const text = [
+    JSON.stringify({ timestamp: at(0), type: 'event_msg', payload: { type: 'task_started' } }),
+    call(1, 'exec'), usage(2, 100, 100),
+    call(3, 'wait'), usage(4, 300, 400),
+    call(5, 'write_stdin'), usage(6, 100, 500),
+    call(7, 'exec'), usage(8, 500, 1000)
+  ].join('\n')
+  const s = parseSession(text)
+  assert.equal(s.pollRequests, 2)
+  assert.equal(s.tools, 2)
+  const summary = summarize([s])
+  assert.equal(summary.pollRequests, 2)
+  assert.equal(summary.pollShare, 0.4)
+})

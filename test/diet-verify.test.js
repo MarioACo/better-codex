@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { dietCheck } from '../src/diet.js'
 import { freshState } from '../src/state.js'
-import { gateReason, trackTool } from '../src/verify.js'
+import { failureOf, gateReason, trackTool } from '../src/verify.js'
 import { tempDir, write } from './helpers.js'
 
 const diet = (command, cwd, extra = {}) => dietCheck({ toolName: 'Bash', toolInput: { command }, cwd, ...extra })?.rule ?? null
@@ -89,4 +89,59 @@ test('verify gate: npm.cmd test inside a PowerShell wrapper counts (seen live on
     trackTool(s, { toolName: 'Bash', toolInput: { command }, cwd: '/r' })
     assert.equal(gateReason(s, project), null, command)
   }
+})
+
+test('failureOf: the line that shows a check failed, for each common tool', () => {
+  const failing = {
+    'node --test (seen live)': '✔ total (2.4ms)\n✖ applyDiscount usa porcentaje entero (2.0ms)\nℹ tests 2\nℹ pass 1\nℹ fail 1\n',
+    jest: 'FAIL src/a.test.ts\nTests:       1 failed, 2 passed, 3 total\n',
+    vitest: ' Test Files  1 failed | 3 passed (4)\n',
+    mocha: '  3 passing (12ms)\n  1 failing\n',
+    pytest: '==== 1 failed, 2 passed in 0.12s ====\n',
+    go: '--- FAIL: TestSum (0.00s)\nFAIL\tdemo\t0.002s\n',
+    cargo: 'test result: FAILED. 1 passed; 1 failed\n',
+    tsc: "src/a.ts(3,7): error TS2322: Type 'string' is not assignable to type 'number'.\n",
+    eslint: '✖ 2 problems (1 error, 1 warning)\n',
+    gradle: 'BUILD FAILED in 12s\n',
+    karma: 'Executed 10 of 10 (2 FAILED) (0.4 secs)\n',
+    angular: '✘ [ERROR] TS2304: Cannot find name \'x\'.\nApplication bundle generation failed. [3.1 seconds]\n',
+    npm: 'npm error Lifecycle script `test` failed with error:\n'
+  }
+  for (const [tool, output] of Object.entries(failing)) assert.ok(failureOf(output), tool)
+  assert.equal(failureOf(failing['node --test (seen live)']), 'ℹ fail 1')
+
+  const passing = [
+    'ℹ tests 3\nℹ pass 3\nℹ fail 0\n',
+    'Tests:       3 passed, 3 total\n',
+    ' Test Files  4 passed (4)\n',
+    '==== 3 passed in 0.10s ====\n',
+    'Found 0 errors. Watching for file changes.\n',
+    'BUILD SUCCESSFUL in 9s\n',
+    'Executed 10 of 10 SUCCESS (0.4 secs)\n',
+    '3 examples, 0 failures\n',
+    'Application bundle generation complete. [2.9 seconds]\n',
+    'Script running with cell ID 3',
+    ''
+  ]
+  for (const output of passing) assert.equal(failureOf(output), null, output)
+})
+
+test('verify gate: a check that ran but failed sends Codex back once to fix or explain it', () => {
+  const state = freshState()
+  const project = { verify: 'npm test' }
+  trackTool(state, { toolName: 'apply_patch', toolInput: { command: '*** Begin Patch\n*** Update File: src/cart.js\n*** End Patch' }, cwd: '/r' })
+  trackTool(state, { toolName: 'Bash', toolInput: { command: 'npm.cmd test' }, cwd: '/r', output: 'ℹ pass 1\nℹ fail 1\n' })
+  assert.match(gateReason(state, project), /last check after your changes failed: "ℹ fail 1"[\s\S]*unrelated/)
+  // Codex already said it still fails: no extra request
+  state.lastAnswer = 'Cambié applyDiscount, pero el test de total sigue fallando porque importa el nombre anterior.'
+  assert.equal(gateReason(state, project), null)
+  state.lastAnswer = 'Listo, todo funciona.'
+  assert.match(gateReason(state, project), /failed/)
+  // fixed and green: nothing to say
+  trackTool(state, { toolName: 'Bash', toolInput: { command: 'npm test' }, cwd: '/r', output: 'ℹ pass 2\nℹ fail 0\n' })
+  assert.equal(gateReason(state, project), null)
+  // only ran the tests, edited nothing: not the gate's business
+  const look = freshState()
+  trackTool(look, { toolName: 'Bash', toolInput: { command: 'npm test' }, cwd: '/r', output: 'ℹ fail 1\n' })
+  assert.equal(gateReason(look, project), null)
 })

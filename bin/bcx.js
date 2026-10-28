@@ -180,6 +180,7 @@ const commands = {
         console.log(`  ${L('entrada por turno', 'input per turn')}     ${humanNumber(before.inputPerTurn).padStart(6)} → ${humanNumber(after.inputPerTurn).padStart(6)}${delta(before.inputPerTurn, after.inputPerTurn)}`)
         console.log(`  ${L('herramientas por turno', 'tool calls per turn')}  ${before.toolsPerTurn.toFixed(1).padStart(6)} → ${after.toolsPerTurn.toFixed(1).padStart(6)}${delta(before.toolsPerTurn, after.toolsPerTurn)}`)
         console.log(`  ${L('contexto medio', 'average context')}        ${humanNumber(before.avgContext).padStart(6)} → ${humanNumber(after.avgContext).padStart(6)}${delta(before.avgContext, after.avgContext)}`)
+        console.log(`  ${L('esperando comandos', 'polling commands')}     ${(Math.round(before.pollShare * 100) + '%').padStart(6)} → ${(Math.round(after.pollShare * 100) + '%').padStart(6)}`)
         console.log(dim(`  ${before.sessions} ${L('sesiones antes', 'sessions before')}, ${after.sessions} ${L('después', 'after')}`))
       }
     }

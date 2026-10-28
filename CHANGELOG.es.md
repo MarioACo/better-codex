@@ -12,6 +12,10 @@ Encontrado probando con Codex 0.164 de verdad (extensión de VS Code, Windows):
 - **Instalación**: imprime el comando exacto para abrir Codex y aprobar los hooks (`--no-daemon` con el CLI que trae la app de escritorio). Ya no confunde `[hooks.state]` de `config.toml` con un segundo juego de hooks.
 - **doctor / log**: dicen qué falta de verdad, y distinguen «permitido» de «ejecutado».
 - **Instalación y doctor saben si ya aprobaste los hooks** (por los registros de aprobación de Codex en `config.toml`). `install` solo te pide aprobarlos otra vez si de verdad cambiaron, y `doctor` muestra `trusted 5/5`.
+- **Comandos lentos**: better-codex mide cada comando. Si uno tardó más de 30 s, se lo señala a Codex una vez y lo recuerda por repo, y el resumen de la siguiente sesión lo lista, así Codex lo corre y lo espera dentro de una sola llamada. En vivo, con unos tests de 75 s: 5 peticiones → 2, tokens de entrada −60%. `bcx stats` muestra la parte de la entrada gastada en esperar (27% en las sesiones del autor).
+- **Reglas para Codex**: juntar en una llamada las lecturas independientes, y correr y esperar los comandos largos dentro de un solo `exec` en vez de esperas separadas.
+- **El verify gate revisa el resultado**: si la última verificación después de un cambio falló (node:test, Jest, Vitest, Mocha, pytest, Go, Cargo, tsc, ESLint, Gradle, Maven, .NET, Karma, Angular, npm) y la respuesta de Codex no lo dice, lo regresa una vez a arreglarla o a decirlo.
+- **Hooks más rápidos**: el guard solo le pregunta a git la raíz del repo cuando una regla la necesita, y la sesión la recuerda: cerca de la mitad del tiempo propio de better-codex por comando.
 - **Documentación**: README, guía para contribuir, política de seguridad y registro de cambios en inglés y español. El README suma una demo animada de una sesión real (`scripts/demo-svg.mjs`), una sección de problemas comunes y un consejo para apagar los skills de plugins que no usas.
 
 ## 0.1.0 — 2026-10-27

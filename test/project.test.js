@@ -3,7 +3,8 @@ import { test } from 'node:test'
 import { layoutOf, onPath, shellLine } from '../src/brief.js'
 import { parseValue } from '../src/config.js'
 import { detectProject, testCommand } from '../src/project.js'
-import { tempDir, write } from './helpers.js'
+import { isolate, tempDir, write } from './helpers.js'
+import { duration, rememberSlow, slowCommands } from '../src/slow.js'
 
 const project = files => {
   const root = tempDir()
@@ -70,4 +71,15 @@ test('brief: shell notes for the first calls that failed live (npm.ps1 blocked, 
   assert.equal(shellLine({ root: '/r', commands: 'cargo test', platform: 'win32', hasRg: true }), '')
   assert.equal(onPath('definitely-not-a-real-tool-bcx'), false)
   assert.equal(onPath('node'), true)
+})
+
+test('slow commands: remembered per repo, slowest first, a few at most', () => {
+  isolate()
+  rememberSlow('/r', 'npm   test', 75)
+  rememberSlow('/r', './gradlew assembleDebug', 260)
+  rememberSlow('/other', 'make', 40)
+  assert.deepEqual(slowCommands('/r'), [{ command: './gradlew assembleDebug', seconds: 260 }, { command: 'npm test', seconds: 75 }])
+  assert.equal(duration(260), '~4 min')
+  assert.equal(duration(75), '~75 s')
+  assert.deepEqual(slowCommands('/nowhere'), [])
 })

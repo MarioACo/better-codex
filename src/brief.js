@@ -2,6 +2,7 @@ import { existsSync, statSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 import { gitBranch, gitChanges, gitFiles, gitRoot } from './git.js'
 import { detectProject } from './project.js'
+import { duration, slowCommands } from './slow.js'
 import { clip } from './util.js'
 
 export const HANDOFF = '.codex/handoff.md'
@@ -71,6 +72,10 @@ export function repoBrief(cwd) {
   if (project.verify) lines.push(`- after code changes verify with \`${project.verify}\` (or a narrower check)`)
   const shell = shellLine({ root, commands: Object.values(project.commands).join(' ') })
   if (shell) lines.push(shell)
+  const slow = slowCommands(base)
+  if (slow.length) {
+    lines.push(`- slow here last time: ${slow.map(s => `\`${clip(s.command, 60)}\` ${duration(s.seconds)}`).join(' · ')}. Run these with the one-exec polling loop.`)
+  }
   if (root) {
     const layout = layoutOf(gitFiles(root))
     if (layout) lines.push(`- layout: ${layout}`)

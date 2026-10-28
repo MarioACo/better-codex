@@ -4,6 +4,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { askedFor, gitStatusMap, inspect, isApproval, isSecretPath, norm } from '../src/guard.js'
+import { gitRoot, lookups, rememberRoots } from '../src/git.js'
 import { repo, tempDir, write } from './helpers.js'
 
 const bash = (command, cwd, extra = {}) => inspect({ toolName: 'Bash', toolInput: { command }, cwd, ...extra })
@@ -246,4 +247,18 @@ test('a yes to a question covers the exact command it showed, or the paths it na
   assert.ok(!askedFor({ rule: 'delete', command: 'Remove-Item -LiteralPath $target -Recurse', targets: ['$target'] }, '¿Borro data/?', cwd))
   assert.ok(!askedFor({ rule: 'delete', command: 'rm -rf data', targets: ['data'] }, '¿Borro `data/old`?', cwd))
   assert.ok(!askedFor({ rule: 'delete', command: 'rm -rf data', targets: ['data'] }, '', cwd))
+})
+
+test('everyday commands never spawn git, and a root the session already found is reused', () => {
+  const cwd = repo()
+  const before = lookups.root
+  for (const command of ['rg -n foo src', 'Get-Content src/app.js', 'npm test', 'node --version']) {
+    assert.equal(inspect({ toolName: 'Bash', toolInput: { command }, cwd }), null, command)
+  }
+  assert.equal(lookups.root, before)
+  // A later hook process starts with what the session state remembered.
+  const other = tempDir()
+  rememberRoots({ [other]: '/known/root' })
+  assert.equal(gitRoot(other), '/known/root')
+  assert.equal(lookups.root, before)
 })

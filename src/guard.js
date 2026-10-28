@@ -188,28 +188,33 @@ export function gitStatusMap(root) {
 // created: files Codex created this session. touched: files Codex changed this session.
 // userDirty: files that had uncommitted changes Codex did not make (yours) when a turn started.
 function context({ cwd, created = [], touched = [], userDirty = [] }) {
-  const root = gitRoot(cwd)
-  const realRoot = root && real(root)
+  // Asking git where the repo is spawns a process (~100 ms on Windows) and most commands
+  // (rg, cat, git status…) never need it: only the rules that do pay for it.
+  let repo = null
+  const root = () => (repo ??= { root: gitRoot(cwd) }).root
+  const realRoot = () => (repo.real ??= real(repo.root))
   let status = null
   const createdSet = new Set(created)
   const touchedSet = new Set(touched)
   const userDirtySet = new Set(userDirty)
   const ctx = {
     cwd,
-    root,
+    get root() {
+      return root()
+    },
     lists: { created, touched, userDirty },
     abs: p => toPosix(resolve(cwd, String(p).replace(/^["']|["']$/g, ''))),
     isTouched: abs => touchedSet.has(norm(abs)) || createdSet.has(norm(abs)),
-    status: () => (status ??= gitStatusMap(root)),
+    status: () => (status ??= gitStatusMap(root())),
     // git answers with real paths; the shell may be under a symlink (macOS /var → /private/var).
-    rel: abs => (root ? toPosix(relative(realRoot, real(abs))) : null),
-    inside: abs => !!root && !ctx.rel(abs).startsWith('..') && !isAbsolute(ctx.rel(abs)),
+    rel: abs => (root() ? toPosix(relative(realRoot(), real(abs))) : null),
+    inside: abs => !!root() && !ctx.rel(abs).startsWith('..') && !isAbsolute(ctx.rel(abs)),
     // Git can give it back: tracked and without uncommitted changes.
     recoverable(abs) {
       if (!ctx.inside(abs)) return false
       const rel = ctx.rel(abs)
       if ([...ctx.status().keys()].some(p => p === rel || p.startsWith(`${rel}/`))) return false
-      return run('git', ['ls-files', '--error-unmatch', '--', rel], { cwd: root }) !== null
+      return run('git', ['ls-files', '--error-unmatch', '--', rel], { cwd: root() }) !== null
     },
     isCreated: abs => createdSet.has(norm(abs)),
     // Uncommitted work Codex would destroy that is not only its own: yours, or from before this session.
@@ -218,7 +223,7 @@ function context({ cwd, created = [], touched = [], userDirty = [] }) {
       return [...ctx.status()]
         .filter(([path, code]) => !untrackedOnly || code === '??')
         .filter(([path]) => !scope.length || scope.some(s => path === s || path.startsWith(`${s}/`) || s.startsWith(`${path}`)))
-        .map(([path]) => norm(`${root}/${path}`))
+        .map(([path]) => norm(`${root()}/${path}`))
         .filter(abs => userDirtySet.has(abs) || !(touchedSet.has(abs) || [...createdSet].some(c => c === abs || c.startsWith(abs))))
     }
   }

@@ -38,6 +38,8 @@ In those same sessions, out of 3,331 tool calls, the guard would have asked for 
 
 One of the global changes was `git config --global user.email …`. Codex ran it without asking, and it replaced the git identity every other repository on that machine was using. better-codex rarely interrupts, and when it does, it's for actions like that one.
 
+And **27% of all input went into polling**: 1,238 requests whose only job was to ask whether a build, a test run or a Gradle compile had finished. Each of them resent the whole conversation.
+
 ## Quick start
 
 You need Node 20+ and Codex with hooks: the CLI, the VS Code extension or the desktop app.
@@ -93,12 +95,13 @@ To update: `git pull`, then `node bin/bcx.js install` again. As long as `hooks.j
 
 | When | Feature | What it does |
 | --- | --- | --- |
-| Session start | **brief** | Gives Codex the branch, uncommitted changes, stack, test/lint/build commands and repo layout in ~100–350 tokens: what it would otherwise spend tool calls finding out. It also covers shell quirks: on Windows it says to use `npm.cmd`, because PowerShell often blocks `npm.ps1`, and it says when `rg` is missing. The brief comes back after `/compact`. |
+| Session start | **brief** | Gives Codex the branch, uncommitted changes, stack, test/lint/build commands and repo layout in ~100–350 tokens: what it would otherwise spend tool calls finding out. It also covers shell quirks: on Windows it says to use `npm.cmd`, because PowerShell often blocks `npm.ps1`, and it says when `rg` is missing. It also lists the commands that were slow in this repo last time. The brief comes back after `/compact`. |
 | Every prompt | **boost** | Applies the prompt modes below, adds a short playbook for the kind of task (bug, feature, refactor, tests, review, performance, docs, question; English and Spanish; once per session), and resolves the files you name (`login`, `ReportTable`, `format.ts:12`) to real paths. |
 | Before each command | **guard** | Stops destructive or hard-to-undo actions until you approve them. See [Safety](#safety). |
 | Before each command | **diet** | Blocks full reads of large lockfiles, build output, binaries and files over 200 KB, and recursive listings that would walk `node_modules`. Tells Codex how to read them instead (`rg -n`, line ranges). |
+| After each command | **slow commands** | Times every command. One that took over 30 s is pointed out to Codex once and remembered for the repo, so next time Codex runs it and waits for it inside one call instead of polling. Live, on a 75 s test run: 5 requests became 2, and input tokens fell 60%. |
 | After each command | **big output** | When an output was huge (over 48 KB), reminds Codex to narrow its next searches. |
-| Before finishing | **verify gate** | If Codex changed code and ran no check after its last edit, sends it back once to run `npm test` (or whatever your project uses). |
+| Before finishing | **verify gate** | If Codex changed code and ran no check after its last edit, sends it back once to run `npm test` (or whatever your project uses). If the last check **failed** and Codex is about to finish without saying so, it sends Codex back to fix it or say plainly that it fails. It reads the failure from the output of node:test, Jest, Vitest, Mocha, pytest, Go, Cargo, tsc, ESLint, Gradle, Maven, .NET, Karma, Angular and npm. |
 | Before finishing | **meter** | Warns you below the answer when context passes 60% (`/compact`) or 80% (`$bcx:handoff` and a new session), and when your 5-hour or weekly limits pass 75%. |
 
 ### Prompt modes
@@ -163,7 +166,7 @@ The guard is an extra layer, not a replacement for Codex's sandbox and approvals
 ## Measure
 
 ```bash
-bcx stats     # tokens, cache, average/peak context, tools per turn, heaviest sessions, before/after install
+bcx stats     # tokens, cache, average/peak context, tools per turn, share spent polling, heaviest sessions, before/after install
 bcx usage     # your 5-hour and weekly limits, and when they reset
 bcx audit     # replays past sessions: what the guard would have stopped, what the diet would have saved
 bcx log       # what better-codex did lately: blocks, approvals, skipped reads, verifications it asked for
@@ -174,7 +177,7 @@ bcx try "+fix the login that crashes"   # what would be added to that prompt
 
 `bcx stats` splits your sessions into before and after installing, and compares input per turn, tools per turn and average context. Everything better-codex does is logged to `~/.codex/better-codex/events.jsonl`.
 
-The fixed cost is about **660 tokens per session**: the rules and the skill descriptions, which get cached. On top of that come the brief and, only when there's something useful to add, ~20–300 tokens per prompt.
+The fixed cost is about **870 tokens per session**: the rules and the skill descriptions, which get cached. On top of that come the brief and, only when there's something useful to add, ~20–300 tokens per prompt.
 
 **Tip: plugins you don't use cost tokens too.** The skills of every installed plugin are described to the model in every session. In one real setup, Figma, Notion, Google Drive and Work Pets added about 3,000 tokens per session, and none of them had ever been used. Turning their skills off brought the skills section from ~4,200 to ~1,000 tokens:
 
@@ -208,6 +211,7 @@ bcx config reset
 | `ctxWarn` / `ctxCritical` | `60` / `80` | Context thresholds (%) |
 | `rateWarn` / `rateCritical` | `75` / `90` | Plan limit thresholds (%) |
 | `lang` | `auto` | Language of the messages you see (`es`, `en`). The model always gets English. |
+| `debug` | `false` | Saves the last payload of each hook in `~/.codex/better-codex/debug/`, for development. Leave it off: it contains command output. |
 
 ## Troubleshooting
 
@@ -224,7 +228,7 @@ bcx config reset
 On every event, Codex runs `node …/bin/bcx.js hook <Event>`. It sends the event as JSON on stdin and reads the reply on stdout ([hooks reference](https://learn.chatgpt.com/docs/hooks)). The commands use absolute paths and no shell syntax, so they work the same in cmd, PowerShell, bash and zsh, including paths with spaces or accents. `bcx doctor` checks this by running each hook through your shells.
 
 - **Fails safe.** If a hook fails, Codex carries on as if it weren't there, and the error shows up in `bcx log` and `bcx doctor`.
-- **Fast.** Each hook takes ~100–350 ms; Node reuses its compile cache.
+- **Fast.** Each hook takes ~100–350 ms; Node reuses its compile cache. The guard only asks git where the repo is when a rule needs it, and the session remembers the answer.
 - **Stays out of Codex's way.** Its `git status` calls don't take `index.lock`, so they never collide with Codex's own git commands.
 - **Concurrency-safe.** Hooks in the same session take turns through a lock, so parallel tool calls don't overwrite each other's state. A stuck lock is released after 5 s.
 - **Path-correct.** Paths are compared after resolving symlinks, so `/var` → `/private/var` on macOS doesn't make a file inside the repo look like it's outside.
@@ -260,7 +264,7 @@ This removes the hooks, the `AGENTS.md` block, the marketplace and the installed
 ## Development
 
 ```bash
-npm test          # 75 tests with node:test, no dependencies
+npm test          # 82 tests with node:test, no dependencies
 npm run check     # tests + offline doctor
 ```
 

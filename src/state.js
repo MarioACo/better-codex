@@ -13,6 +13,8 @@ export const freshState = () => ({
   seq: 0,
   lastEdit: 0,
   lastVerify: 0,
+  // The line that shows the last check failed, or null.
+  verifyFailed: null,
   edited: [],
   gateFired: false,
   bigOutputWarned: false,
@@ -25,6 +27,12 @@ export const freshState = () => ({
   meter: {},
   // Codex's last message, so a "yes" can be tied to the question it answers.
   lastAnswer: '',
+  // cwd → git root, so later hooks don't spawn git again.
+  roots: {},
+  // tool_use_id → when PreToolUse let it run, to time it in PostToolUse.
+  started: {},
+  // Slow commands Codex was already told about this session.
+  slowWarned: [],
   guard: { pending: [], approved: [], approvedTurn: null, asked: '' }
 })
 
