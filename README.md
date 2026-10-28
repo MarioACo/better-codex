@@ -1,200 +1,273 @@
 # better-codex
 
-Hooks, skills y métricas para [OpenAI Codex](https://developers.openai.com/codex) que hacen tres cosas:
+**English** · [Español](README.es.md)
 
-1. **Gasta menos tokens**: Codex arranca sabiendo cómo es tu repo, no vuelca lockfiles ni `node_modules`, y te avisa antes de que una sesión se vuelva cara.
-2. **Responde mejor**: cada prompt recibe la guía justa para su tipo de tarea, los archivos que mencionas se resuelven a rutas reales, y no termina sin verificar el código que cambió.
-3. **Es más seguro**: antes de algo destructivo (borrar, descartar cambios, `push --force`, `DROP TABLE`, deploys, secretos), Codex se detiene, te explica qué quiere hacer, por qué, qué se puede perder y qué alternativa hay, y solo sigue si respondes «sí».
+[![CI](https://github.com/MarioACo/better-codex/actions/workflows/test.yml/badge.svg)](https://github.com/MarioACo/better-codex/actions/workflows/test.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+![Node 20+](https://img.shields.io/badge/node-%3E%3D20-339933)
+![Zero dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)
 
-Todo corre en tu máquina, sin dependencias y sin enviar nada a ningún lado. Inspirado en [better-claude](https://github.com/midudev/better-claude).
+Hooks, skills and metrics that make [OpenAI Codex](https://developers.openai.com/codex) cheaper, sharper and safer to use.
 
-## Por qué
+- **Fewer tokens.** Codex starts each session already knowing your repo, skips lockfiles, build output and `node_modules`, and tells you before a session gets expensive.
+- **Better answers.** Each prompt gets short guidance for its kind of task, the files you mention are resolved to real paths, and Codex doesn't finish without checking the code it changed.
+- **Safer.** Before anything destructive (deleting files, discarding uncommitted work, `push --force`, `DROP TABLE`, deploys, secrets), Codex stops and tells you what it wants to run, why, what could be lost, and a safer alternative. It only goes ahead if you say yes.
 
-Medido en 34 sesiones reales de Codex (`bcx stats`): **7 sesiones que pasaron del 70% de contexto se llevaron el 79% de todos los tokens de entrada**. Cada petición reenvía la conversación entera, así que una sesión larga cuesta cada vez más y responde peor.
+Everything runs on your machine, with no dependencies and no network calls. Inspired by [better-claude](https://github.com/midudev/better-claude).
 
-Y en esas sesiones, de 3,331 llamadas a herramientas, el guard habría pedido confirmación en 34 (1%, `bcx audit`): 25 borrados, 6 cambios de configuración global, 2 cambios al historial de git (un `push --force-with-lease` a main y el borrado de un tag remoto) y 1 lectura de credenciales. Entre los cambios globales, Codex ejecutó `git config --global user.email …` y reemplazó, sin preguntar, la identidad de git que usaban todos los demás repos de la máquina. Pocas interrupciones, justo en las acciones que importan.
+## What it looks like
 
-## Instalar
+A real session with Codex 0.164 in the VS Code extension on Windows, translated from Spanish. The repo has a folder with a file that was never committed:
 
-Requisitos: Node 20+ y Codex con hooks (CLI, extensión de VS Code o app de escritorio; `codex features list` debe mostrar `hooks … true`).
+```text
+You:    Delete the whole data folder, I don't need it anymore.
+
+Codex:  The folder contains clientes.csv and ventas-octubre.csv. The second one is not
+        tracked by git and could be lost for good.
+
+        Exact command:
+          Remove-Item -LiteralPath '…\demo-repo\data' -Recurse -Force
+
+        This permanently deletes the folder and both files. Safer alternative: move it
+        to a temporary backup folder first.
+
+        Do you approve running exactly that command?
+
+You:    yes
+```
+
+Your yes covers that exact command, once. If Codex then runs something else, or puts the path in a variable (`$target`) instead of writing it out, the guard blocks it and Codex has to ask again.
+
+## Why
+
+Measured on 34 real Codex sessions (`bcx stats`): **7 sessions that went past 70% of the context window used 79% of all input tokens.** Every request resends the whole conversation, so a long session costs more with every turn and its answers get worse.
+
+In those same sessions, out of 3,331 tool calls, the guard would have asked for confirmation 34 times (1%, `bcx audit`):
+
+- 25 deletes;
+- 6 global configuration changes;
+- 2 git history rewrites (a `push --force-with-lease` to main and a deleted remote tag);
+- 1 credentials read.
+
+One of the global changes was `git config --global user.email …`. Codex ran it without asking, and it replaced the git identity every other repository on that machine was using. better-codex rarely interrupts, and when it does, it's for actions like that one.
+
+## Quick start
+
+You need Node 20+ and Codex with hooks: the CLI, the VS Code extension or the desktop app.
 
 ```bash
 git clone https://github.com/MarioACo/better-codex
 cd better-codex
-node bin/bcx.js install --dry-run   # muestra qué cambiaría, sin escribir nada
+node bin/bcx.js install --dry-run   # shows what would change, writes nothing
 node bin/bcx.js install
-node bin/bcx.js doctor
 ```
 
-`install` hace esto, con respaldo previo de cada archivo en `~/.codex/better-codex/backups/`:
+**Then the step only you can do: trust the hooks.**
 
-- copia better-codex a `~/.codex/better-codex/app/`, de donde corren los hooks: puedes mover o borrar el clon, cambiar de versión de Node con nvm o instalar con `npx`, y sigue funcionando,
-- agrega 5 hooks a `~/.codex/hooks.json` (los tuyos se quedan intactos),
-- agrega un bloque delimitado de reglas al final de `~/.codex/AGENTS.md`,
-- registra el marketplace e instala el plugin `bcx` (4 skills).
+1. Open the Codex CLI. `install` prints the exact command for your machine.
+2. Type `/hooks`. The 5 better-codex hooks are listed as needing review.
+3. Trust each of them.
 
-**Último paso, tuyo**: abre Codex en una terminal, escribe `/hooks` y aprueba los 5 de better-codex. Codex nunca ejecuta hooks que no aprobaste, y si cambian te los vuelve a pedir. Ojo: la app de escritorio y `codex exec` se los saltan sin avisar, así que este paso no es opcional. Después, `bcx doctor` muestra en "Lo que Codex ha enviado de verdad" que los hooks están vivos.
+Codex never runs hooks you haven't trusted, and asks again if they change. The desktop app, the VS Code extension and `codex exec` skip untrusted hooks **without any warning**, so don't skip this step.
 
-Si solo tienes la app de escritorio o la extensión de VS Code, el CLI viene incluido pero no arranca solo («this CLI has no complete local package»). Ábrelo así; `bcx install` te imprime este comando con tu ruta:
+Finally, check that Codex is running them:
+
+```bash
+node bin/bcx.js doctor   # "What Codex has actually sent" should list your recent events
+```
+
+<details>
+<summary>Only have the desktop app or the VS Code extension?</summary>
+
+Both include a Codex CLI, but it isn't on your `PATH`. Open it in one of these ways:
 
 ```powershell
+# The CLI that ships with the desktop app needs --no-daemon
+# (without it: "this CLI has no complete local package")
 & "$env:USERPROFILE\.codex\.sandbox-bin\codex.exe" --no-daemon   # Windows
 ~/.codex/.sandbox-bin/codex --no-daemon                          # macOS / Linux
+
+# The VS Code extension ships a complete CLI
+~/.vscode/extensions/openai.chatgpt-<version>-<platform>/bin/<platform>/codex
 ```
 
-Para actualizar: `git pull` y `node bin/bcx.js install` otra vez. Para usar `bcx` desde cualquier carpeta: `npm link` dentro del repo.
+</details>
 
-## Qué hace
+`install` does the following, backing up every file it touches to `~/.codex/better-codex/backups/` first:
 
-| Momento | Función | Qué hace |
+- **Copies better-codex to `~/.codex/better-codex/app/`.** The hooks run from that copy, so you can move or delete the clone, or switch Node versions, and they keep working.
+- **Adds 5 hooks to `~/.codex/hooks.json`.** Your own hooks stay as they are.
+- **Appends a delimited block of rules to `~/.codex/AGENTS.md`.**
+- **Registers the marketplace and installs the `bcx` plugin** (4 skills).
+
+To update: `git pull`, then `node bin/bcx.js install` again. As long as `hooks.json` doesn't change, Codex doesn't ask you to trust the hooks again. To get a `bcx` command you can run from any folder, run `npm link` in the repo.
+
+## Features
+
+| When | Feature | What it does |
 | --- | --- | --- |
-| Al iniciar sesión | **brief** | Le da a Codex rama, cambios sin commit, stack, comandos de test/lint/build y estructura del repo en ~150-300 tokens, lo que normalmente gasta explorando. Vuelve a darlo tras `/compact`. |
-| Cada prompt | **boost** | Modos por prefijo (abajo), una guía corta según la tarea (bug, feature, refactor, tests, review, rendimiento, docs, pregunta; en español e inglés, una sola vez por sesión) y las rutas reales de los archivos que nombras (`login`, `ReportTable`, `format.ts:12`). |
-| Antes de cada comando | **guard** | Detiene acciones destructivas o difíciles de deshacer hasta que digas «sí». Ver [Seguridad](#seguridad). |
-| Antes de cada comando | **diet** | Evita leer completos lockfiles grandes, salida de build, binarios y archivos de más de 200 KB, y listados recursivos que recorrerían `node_modules`. Le dice a Codex cómo hacerlo bien (`rg -n`, rangos de líneas). |
-| Después de cada comando | **big output** | Si una salida fue enorme (más de 48 KB), le recuerda a Codex acotar las siguientes búsquedas. |
-| Al terminar | **verify gate** | Si cambió código y no corrió ninguna verificación después del último cambio, lo manda una vez a ejecutar `npm test` (o lo que use tu proyecto) antes de responder. |
-| Al terminar | **meter** | Te avisa debajo de la respuesta cuando el contexto pasa del 60% (`/compact`) o del 80% (`$bcx:handoff` y sesión nueva), y cuando tus límites de 5 h o semanal pasan del 75%. |
+| Session start | **brief** | Gives Codex the branch, uncommitted changes, stack, test/lint/build commands and repo layout in ~100–350 tokens: what it would otherwise spend tool calls finding out. It also covers shell quirks: on Windows it says to use `npm.cmd`, because PowerShell often blocks `npm.ps1`, and it says when `rg` is missing. The brief comes back after `/compact`. |
+| Every prompt | **boost** | Applies the prompt modes below, adds a short playbook for the kind of task (bug, feature, refactor, tests, review, performance, docs, question; English and Spanish; once per session), and resolves the files you name (`login`, `ReportTable`, `format.ts:12`) to real paths. |
+| Before each command | **guard** | Stops destructive or hard-to-undo actions until you approve them. See [Safety](#safety). |
+| Before each command | **diet** | Blocks full reads of large lockfiles, build output, binaries and files over 200 KB, and recursive listings that would walk `node_modules`. Tells Codex how to read them instead (`rg -n`, line ranges). |
+| After each command | **big output** | When an output was huge (over 48 KB), reminds Codex to narrow its next searches. |
+| Before finishing | **verify gate** | If Codex changed code and ran no check after its last edit, sends it back once to run `npm test` (or whatever your project uses). |
+| Before finishing | **meter** | Warns you below the answer when context passes 60% (`/compact`) or 80% (`$bcx:handoff` and a new session), and when your 5-hour or weekly limits pass 75%. |
 
-### Modos de prompt
+### Prompt modes
 
-| Escribe | Qué pasa |
+| Type | What happens |
 | --- | --- |
-| `+arregla el login` o `profundo: …` / `deep: …` | Investiga antes de editar, considera casos borde, verifica a fondo. |
-| `rapido: …` / `quick: …` | El cambio mínimo, sin explorar de más, respuesta de máximo 5 líneas. |
-| `pregunta: …` / `ask: …` | Solo responde; no edita archivos ni ejecuta cambios. |
-| `plan: …` | Un plan numerado (archivos, riesgos, verificación) y espera tu aprobación. |
+| `+fix the login` or `deep: …` | Investigates before editing, considers edge cases, verifies thoroughly. |
+| `quick: …` | The smallest change, no extra exploring, an answer of at most 5 lines. |
+| `ask: …` | Answers only: no file edits, no changes. |
+| `plan: …` | A numbered plan (files, risks, verification), then waits for your go-ahead. |
 
-### Skills (plugin `bcx`)
+The Spanish prefixes work too: `profundo:`, `rapido:`, `pregunta:`.
 
-| Skill | Para qué |
+### Skills (`bcx` plugin)
+
+| Skill | Use it to |
 | --- | --- |
-| `$bcx:commit` | Divide tus cambios en Conventional Commits por tema y hace push, solo commit o rama nueva. Nunca agrega secretos ni cambia tu identidad de git. |
-| `$bcx:refine` | Convierte un pedido vago en un brief (objetivo, archivos, restricciones, criterios de aceptación, verificación) y luego lo ejecuta. |
-| `$bcx:handoff` | Escribe `.codex/handoff.md` para seguir en una sesión nueva y barata; el brief de la siguiente sesión lo señala. |
-| `$bcx:debug` | Reproducir, aislar, causa raíz, arreglo mínimo y prueba de regresión. |
+| `$bcx:commit` | Split your changes into topic-sized Conventional Commits, then push, commit only, or open a new branch. Never stages secrets or changes your git identity. |
+| `$bcx:refine` | Turn a vague request into a brief (goal, files, constraints, acceptance criteria, verification), then carry it out. |
+| `$bcx:handoff` | Write `.codex/handoff.md` so you can continue in a fresh, cheap session. The next session's brief points to it. |
+| `$bcx:debug` | Reproduce, isolate, find the root cause, make the minimal fix, add a regression test. |
 
-## Seguridad
+## Safety
 
-El **guard** revisa cada comando y cada parche antes de que corran. No mira solo el comando de afuera: también entra en los scripts que Codex ejecuta en modo código, los bloques `{ }` de PowerShell, lo que llega por tubería (`… | Remove-Item`, `… | xargs rm`), los scripts `.ps1`/`.sh`, lo que hace cada `npm run …` según tu `package.json`, el código de `node -e`/`python -c` y los scripts que el mismo Codex escribió en la sesión antes de ejecutarlos. Se detiene ante:
+The **guard** inspects every command and patch before it runs. It doesn't stop at the outer command. It also looks inside:
 
-- **Borrados** que git no puede recuperar: carpetas completas, archivos sin commit o sin seguimiento, rutas fuera del repo, comodines, destinos en variables, `find … -delete`, `shutil.rmtree`/`fs.rmSync(…, {recursive})`. Borrar `node_modules`, `dist`, `build`, logs, temporales o archivos que el mismo Codex creó en la sesión no pregunta.
-- **Descartar tus cambios sin commit**: `reset --hard`, `checkout -- …`, `restore`, `clean -f`, `stash drop`, `worktree remove --force`. Si solo se pierden cambios que Codex hizo en esta sesión, no pregunta.
-- **Historial de git**: `push --force` (crítico en main), `--mirror`, borrar ramas o tags remotos, `branch -D`, `filter-branch`, `reset --hard` a otro commit.
-- **Secretos**: leer `.env`, llaves, keystores o credenciales (su contenido se enviaría al modelo), volcar variables de entorno, sobrescribirlos o agregarlos a git.
-- **Bases de datos**: `DROP`, `TRUNCATE`, `DELETE`/`UPDATE` sin `WHERE`, `prisma migrate reset`, `migrate:fresh`, `manage.py flush`, `FLUSHALL`…
-- **Infraestructura y publicación**: `terraform destroy`, `kubectl delete`, `docker compose down -v`, `npm publish`, `firebase deploy`, hacer público un repo…
-- **Cerrar programas por nombre**: `taskkill /IM chrome.exe`, `Stop-Process -Name node`, `pkill java` cierran también tus ventanas y servidores. Por PID no pregunta.
-- **Tu configuración global**: `git config --global …` (tu identidad), `npm config set`, `setx`, variables de entorno de usuario o de máquina.
-- **Sistema**: formatear discos, registro de Windows, borrar puntos de restauración, apagar el antivirus o el firewall, apagar el equipo, `curl … | bash`.
+- the scripts Codex runs in code mode;
+- PowerShell `{ }` blocks;
+- piped input (`… | Remove-Item`, `… | xargs rm`);
+- `.ps1` and `.sh` scripts;
+- what each `npm run …` actually runs, according to your `package.json`;
+- `node -e` and `python -c` code;
+- scripts Codex wrote earlier in the session before running them.
 
-Así se ve:
+It stops on:
 
-```text
-Tú:     sube los cambios aunque haya conflicto
-Codex:  Quiero ejecutar `git push --force origin main`. Es necesario porque tu rama y el
-        remoto divergieron. Riesgo: borraría los 2 commits que están solo en el remoto.
-        Alternativa más segura: `git pull --rebase` y luego un push normal. ¿Lo autorizas?
-        🛡 better-codex detuvo: Reescribir o borrar historial de git — `git push --force origin main`.
-           Riesgo: puede borrar commits (también de otras personas en el remoto). Responde «sí» para permitirlo una vez.
-Tú:     sí
-```
+- **Deletes git can't undo**: whole folders, uncommitted or untracked files, paths outside the repo, wildcards, targets in variables, `find … -delete`, `shutil.rmtree`, `fs.rmSync(…, {recursive})`. Deleting `node_modules`, `dist`, `build`, logs, temp files, or files Codex created this session doesn't ask.
+- **Discarding your uncommitted work**: `reset --hard`, `checkout -- …`, `restore`, `clean -f`, `stash drop`, `worktree remove --force`. If only Codex's own changes from this session would be lost, it doesn't ask.
+- **Git history**: `push --force` (critical on main), `--mirror`, deleting remote branches or tags, `branch -D`, `filter-branch`.
+- **Secrets**: reading `.env`, keys, keystores or credentials (their contents would go to the model), dumping environment variables, overwriting secrets, adding them to git.
+- **Databases**: `DROP`, `TRUNCATE`, `DELETE`/`UPDATE` without `WHERE`, `prisma migrate reset`, `migrate:fresh`, `manage.py flush`, `FLUSHALL`…
+- **Infrastructure and publishing**: `terraform destroy`, `kubectl delete`, `docker compose down -v`, `npm publish`, `firebase deploy`, making a repo public…
+- **Killing programs by name**: `taskkill /IM chrome.exe`, `Stop-Process -Name node` and `pkill java` also close your own windows and servers. Killing by PID doesn't ask.
+- **Your global configuration**: `git config --global …` (your identity), `npm config set`, `setx`, user or machine environment variables.
+- **The system**: formatting disks, the Windows registry, deleting restore points, turning off the antivirus or firewall, shutting down, `curl … | bash`.
 
-La aprobación vale **para esa acción y solo en ese turno**: si Codex la reintenta con otra sintaxis (`rm -rf x` o `Remove-Item -Recurse x`) pasa, pero cualquier otra acción riesgosa vuelve a preguntar. «Sí, pero…», «espera» o cualquier otra respuesta la cancelan.
+**How approval works.** A yes is valid for one action, in one turn:
 
-Casi siempre Codex pregunta **antes** de que el guard tenga que intervenir: las reglas que better-codex le da se lo piden. Tu «sí» a esa pregunta también cuenta, así que no tienes que confirmar dos veces. Eso sí, solo cubre lo que la pregunta mostraba: el comando exacto o las rutas exactas que nombró, para ese tipo de acción. Si Codex luego intenta otra cosa, o usa una variable (`$target`) en vez de la ruta, el guard lo detiene igual. Prueba un comando con `bcx guard "git reset --hard"`, revisa qué habría detenido en tus sesiones pasadas con `bcx audit`, y qué detuvo de verdad con `bcx log`.
+- If Codex retries the same action with different syntax (`rm -rf x` or `Remove-Item -Recurse x`), it goes through.
+- Any other risky action asks again.
+- "Yes, but…", "wait", or any other reply cancels the approval.
+- Codex usually asks on its own, before the guard has to step in, because better-codex's rules tell it to. A yes to that question counts too, so you don't confirm twice. It covers only what the question showed: the exact command, or the exact paths it named for that kind of action.
 
-El guard es una capa extra, no un reemplazo del sandbox y las aprobaciones de Codex: protege de los errores de un agente que coopera, no de uno malicioso. Ver [SECURITY.md](SECURITY.md).
+To see the guard at work:
 
-## Medir
+- `bcx guard "git reset --hard"` checks a single command;
+- `bcx audit` shows what it would have stopped in your past sessions;
+- `bcx log` shows what it actually stopped.
+
+The guard is an extra layer, not a replacement for Codex's sandbox and approvals. It protects you from the mistakes of a cooperative agent, not from a malicious one. See [SECURITY.md](SECURITY.md).
+
+## Measure
 
 ```bash
-bcx stats            # tokens, caché, contexto medio y pico, herramientas por turno, sesiones más pesadas, antes/después
-bcx usage            # tus límites de 5 h y semanal, con cuándo se reinician
-bcx audit            # repasa tus sesiones pasadas: qué habría detenido el guard y qué habría ahorrado la dieta
-bcx log              # lo último que hizo: bloqueos, aprobaciones, lecturas evitadas, verificaciones pedidas
-bcx doctor           # instalación, hooks probados en tus shells, y lo que Codex ha enviado de verdad
-bcx brief            # el resumen que recibe Codex en este repo, con su costo en tokens
-bcx try "+arregla el login que truena"   # lo que se agregaría a ese prompt
+bcx stats     # tokens, cache, average/peak context, tools per turn, heaviest sessions, before/after install
+bcx usage     # your 5-hour and weekly limits, and when they reset
+bcx audit     # replays past sessions: what the guard would have stopped, what the diet would have saved
+bcx log       # what better-codex did lately: blocks, approvals, skipped reads, verifications it asked for
+bcx doctor    # install checks, hooks run through your shells, and what Codex has actually sent
+bcx brief     # the brief Codex gets in this repo, and its token cost
+bcx try "+fix the login that crashes"   # what would be added to that prompt
 ```
 
-`bcx stats` separa automáticamente las sesiones de antes y después de instalar, con la entrada por turno, las herramientas por turno y el contexto medio de cada grupo. Lo que hace better-codex queda en `~/.codex/better-codex/events.jsonl` (resúmenes, lecturas evitadas, paradas del guard, verificaciones pedidas).
+`bcx stats` splits your sessions into before and after installing, and compares input per turn, tools per turn and average context. Everything better-codex does is logged to `~/.codex/better-codex/events.jsonl`.
 
-El costo fijo de better-codex es de unos **660 tokens por sesión** (reglas y descripción de los skills, que se cachean), más hasta ~300 del brief y ~100 por prompt cuando hay algo útil que agregar.
+The fixed cost is about **660 tokens per session**: the rules and the skill descriptions, which get cached. On top of that come the brief and, only when there's something useful to add, ~20–300 tokens per prompt.
 
-## Configurar
+## Configure
 
 ```bash
-bcx config                      # ver todo
+bcx config                      # show everything
 bcx config set verifyGate off
-bcx config set meter always     # una línea de contexto y límites en cada turno
+bcx config set meter always     # a context and limits line on every turn
 bcx config reset
 ```
 
-| Clave | Por defecto | Qué controla |
+| Key | Default | Controls |
 | --- | --- | --- |
-| `guard` | `true` | Preguntar antes de acciones destructivas |
-| `brief` | `true` | Resumen del repo al iniciar sesión |
-| `boost` / `hints` | `true` | Modos y guías por prompt / rutas sugeridas |
-| `diet` / `dietMaxKB` | `true` / `200` | Lecturas inútiles / tamaño máximo de lectura completa |
-| `bigOutputKB` | `48` | Aviso de salida enorme (0 lo apaga) |
-| `verifyGate` | `true` | Verificar antes de terminar |
-| `meter` | `warn` | `warn` (solo umbrales), `always` u `off` |
-| `ctxWarn` / `ctxCritical` | `60` / `80` | Umbrales de contexto (%) |
-| `rateWarn` / `rateCritical` | `75` / `90` | Umbrales de límites del plan (%) |
-| `lang` | `auto` | Idioma de los mensajes para ti (`es`, `en`); al modelo siempre en inglés |
+| `guard` | `true` | Asking before destructive actions |
+| `brief` | `true` | Repo brief at session start |
+| `boost` / `hints` | `true` | Modes and playbooks per prompt / suggested paths |
+| `diet` / `dietMaxKB` | `true` / `200` | Wasteful reads / largest full read |
+| `bigOutputKB` | `48` | Huge-output warning (0 turns it off) |
+| `verifyGate` | `true` | Checking before finishing |
+| `meter` | `warn` | `warn` (thresholds only), `always` or `off` |
+| `ctxWarn` / `ctxCritical` | `60` / `80` | Context thresholds (%) |
+| `rateWarn` / `rateCritical` | `75` / `90` | Plan limit thresholds (%) |
+| `lang` | `auto` | Language of the messages you see (`es`, `en`). The model always gets English. |
 
-## Cómo funciona
+## Troubleshooting
 
-Codex ejecuta `node …/bin/bcx.js hook <Evento>` en cada evento, le pasa el evento en JSON por stdin y lee la respuesta por stdout ([referencia de hooks](https://learn.chatgpt.com/docs/hooks)). Los comandos usan rutas absolutas sin sintaxis de shell, así que funcionan igual en cmd, PowerShell, bash y zsh, también con espacios o acentos en la ruta; `bcx doctor` lo comprueba ejecutando cada hook en tus shells.
+| You see | Do this |
+| --- | --- |
+| `bcx doctor`: "Codex has not run them yet" | Trust the hooks in `/hooks`, then send a prompt. Until you do, Codex skips them silently. |
+| "this CLI has no complete local package" | The CLI that ships with the desktop app needs `--no-daemon`, or use the one in the VS Code extension (see [Quick start](#quick-start)). |
+| `codex exec`: "Code Mode is unavailable … host executable was not found" | That's the desktop app's CLI, which is missing the code-mode host. Use the VS Code extension's `codex`, which includes it. |
+| The guard stopped something harmless | `bcx guard "<command>"` explains why. False positives are bugs: please [open an issue](https://github.com/MarioACo/better-codex/issues). |
+| Something seems off | `bcx log` and `bcx doctor` show internal errors. If a hook fails, Codex carries on as if it weren't there. |
 
-Robustez:
+## How it works
 
-- Si algo falla adentro de un hook, Codex sigue como si no existiera; el error queda en `bcx log` y `bcx doctor`.
-- Cada hook tarda entre 120 y 300 ms (Node reutiliza su caché de compilación). Sus `git status` no toman `index.lock`, para no chocar con los comandos de git de Codex.
-- Los hooks de una misma sesión se turnan con un candado, así que las llamadas en paralelo no se pisan el estado; si el candado se queda colgado, a los 5 s se libera.
-- Las rutas se comparan ya resueltas, así que los enlaces simbólicos (como `/var` → `/private/var` en macOS) no confunden "dentro del repo" con "fuera".
+On every event, Codex runs `node …/bin/bcx.js hook <Event>`. It sends the event as JSON on stdin and reads the reply on stdout ([hooks reference](https://learn.chatgpt.com/docs/hooks)). The commands use absolute paths and no shell syntax, so they work the same in cmd, PowerShell, bash and zsh, including paths with spaces or accents. `bcx doctor` checks this by running each hook through your shells.
+
+- **Fails safe.** If a hook fails, Codex carries on as if it weren't there, and the error shows up in `bcx log` and `bcx doctor`.
+- **Fast.** Each hook takes ~100–350 ms; Node reuses its compile cache.
+- **Stays out of Codex's way.** Its `git status` calls don't take `index.lock`, so they never collide with Codex's own git commands.
+- **Concurrency-safe.** Hooks in the same session take turns through a lock, so parallel tool calls don't overwrite each other's state. A stuck lock is released after 5 s.
+- **Path-correct.** Paths are compared after resolving symlinks, so `/var` → `/private/var` on macOS doesn't make a file inside the repo look like it's outside.
+- **Tested against the real thing.** Besides the test suite, every change in behavior is checked in live Codex sessions in a throwaway repo.
 
 ```text
-bin/bcx.js        CLI y punto de entrada de los hooks
-src/hooks.js      qué hace cada evento
-src/guard.js      reglas de seguridad y aprobación
-src/prompt.js     modos, tipos de tarea, rutas sugeridas
-src/brief.js      resumen del repo · src/project.js  detección de stack y comandos
-src/diet.js       lecturas inútiles · src/verify.js  verify gate
-src/meter.js      avisos de contexto y límites · src/stats.js, src/audit.js  métricas
-src/install.js    instalar, desinstalar · src/doctor.js  diagnóstico
-templates/        bloque de AGENTS.md
+bin/bcx.js        CLI and hook entry point
+src/hooks.js      what each event does
+src/guard.js      safety rules and approvals
+src/prompt.js     modes, task types, suggested paths
+src/brief.js      repo brief · src/project.js  stack and command detection
+src/diet.js       wasteful reads · src/verify.js  verify gate
+src/meter.js      context and limit warnings · src/stats.js, src/audit.js  metrics
+src/install.js    install, uninstall · src/doctor.js  diagnostics
+templates/        the AGENTS.md block
 plugins/bcx/      skills
 ```
 
-## Limitaciones
+## Limitations
 
-- Los hooks no pueden cambiar el nivel de razonamiento por turno: `+` agrega instrucciones de profundidad, no sube el `reasoning effort`. Para eso usa `/model` en Codex.
-- El formato de los archivos de sesión de Codex no es una interfaz estable. Si cambia, `stats`, `usage` y el meter dejan de mostrar datos, pero nada se rompe.
-- `bcx audit` evalúa las reglas de git con el estado actual de cada repo, no con el de aquel momento.
+- **The `+` prefix doesn't raise the reasoning effort.** Hooks can't change it per turn, so `+` adds instructions to go deeper instead. Use `/model` in Codex for that.
+- **Codex's session file format is not a stable interface.** If it changes, `stats`, `usage` and the meter stop showing data, but nothing breaks.
+- **`bcx audit` judges past git rules against today's state.** It uses each repo's current state, not the state at the time.
 
-## Desinstalar
+## Uninstall
 
 ```bash
 node bin/bcx.js uninstall
 ```
 
-Quita los hooks, el bloque de `AGENTS.md`, el marketplace y la copia instalada, sin tocar nada tuyo. Tus ajustes y métricas quedan en `~/.codex/better-codex/` por si vuelves; bórrala si no.
+This removes the hooks, the `AGENTS.md` block, the marketplace and the installed copy, and leaves everything of yours alone. Your settings and metrics stay in `~/.codex/better-codex/` in case you come back; delete that folder if you won't.
 
-## Desarrollo
+## Development
 
 ```bash
-npm test          # 66 pruebas con node:test, sin dependencias
-npm run check     # pruebas + doctor sin red
+npm test          # 75 tests with node:test, no dependencies
+npm run check     # tests + offline doctor
 ```
 
-Las pruebas usan repos de git temporales y un `CODEX_HOME` aislado: nunca tocan tu `~/.codex`. La CI corre en Linux, macOS y Windows con Node 20, 22 y 24. Ver [CONTRIBUTING.md](CONTRIBUTING.md) y [CHANGELOG.md](CHANGELOG.md).
+The tests use temporary git repos and an isolated `CODEX_HOME`, so they never touch your `~/.codex`. CI runs on Linux, macOS and Windows with Node 20, 22 and 24. See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
 
----
+## License
 
-## English
-
-better-codex adds hooks, skills and metrics to OpenAI Codex: a repo brief at session start, prompt modes (`+`, `quick:`, `ask:`, `plan:`) and task playbooks, a **guard** that stops destructive actions (deletes, discarding uncommitted work, force-push, DB drops, deploys, secrets) until you explicitly approve them, a token diet for lockfiles and build output, a verify gate before Codex finishes, and context/rate-limit warnings. `bcx stats`, `bcx usage` and `bcx audit` measure the effect on your own sessions. Install with `node bin/bcx.js install`, then trust the hooks in `/hooks`. Zero dependencies, everything local, MIT.
-
-MIT © MarioACo
+[MIT](LICENSE) © MarioACo

@@ -1,20 +1,35 @@
 # Changelog
 
-## Sin publicar
+**English** · [Español](CHANGELOG.es.md)
 
-Encontrado probando con Codex 0.164 de verdad (extensión de VS Code, Windows):
+## Unreleased
 
-- **Guard**: un «sí» a la pregunta que Codex hizo por su cuenta ya no exige una segunda confirmación. Cubre solo el comando o las rutas que esa pregunta mostraba. Codex ahora muestra el comando con rutas literales al preguntar.
-- **Verify gate**: `npm.cmd test`, `node.exe --test` y similares cuentan como verificación (antes Codex repetía los tests).
-- **Resumen del repo**: en Windows avisa de usar `npm.cmd` (PowerShell suele bloquear `npm.ps1`) y, si `rg` no está instalado, de buscar con `git grep -n`. Eran 2 llamadas fallidas por sesión.
-- **Instalación**: imprime el comando exacto para abrir Codex y aprobar los hooks (`--no-daemon` con el CLI que trae la app); `[hooks.state]` en `config.toml` ya no se confunde con hooks duplicados.
-- **doctor / log**: dicen qué falta de verdad y distinguen «permitido» de «ejecutado».
+Found by testing against real Codex 0.164 (VS Code extension, Windows):
+
+- **Guard**: a yes to a question Codex asked on its own no longer needs a second confirmation. It covers only the command or the paths that question showed. Codex now writes out the command with literal paths when it asks.
+- **Verify gate**: `npm.cmd test`, `node.exe --test` and the like count as checks. Before, Codex ran the tests a second time.
+- **Repo brief**: on Windows it tells Codex to use `npm.cmd`, because PowerShell often blocks `npm.ps1`. If `rg` isn't installed, it says to search with `git grep -n`. Each of these was a failed call in every session.
+- **Install**: prints the exact command to open Codex and trust the hooks (`--no-daemon` for the CLI that ships with the desktop app). It no longer mistakes `[hooks.state]` in `config.toml` for a second set of hooks.
+- **doctor / log**: they say what's actually missing, and tell "allowed" apart from "ran".
+- **Docs**: README, contributing guide, security policy and changelog in English and Spanish. The README adds a real session example and a troubleshooting section.
 
 ## 0.1.0 — 2026-10-27
 
-Primera versión.
+First release.
 
-- **Hooks**: resumen del repo al iniciar sesión, modos de prompt (`+`, `rapido:`, `pregunta:`, `plan:`) y guías por tipo de tarea, rutas sugeridas, dieta de tokens, aviso de salidas enormes, verify gate y medidor de contexto y límites.
-- **Guard**: detiene borrados irrecuperables, descartar cambios sin commit, reescrituras de historial, secretos, bases de datos, infraestructura, cerrar programas por nombre, configuración global y cambios de sistema, también dentro de scripts, `package.json`, tuberías y bloques de PowerShell. La aprobación vale para esa acción y ese turno.
-- **Skills** (plugin `bcx`): `$bcx:commit`, `$bcx:refine`, `$bcx:handoff`, `$bcx:debug`.
-- **CLI**: `install` (copia estable en `~/.codex/better-codex/app`, con respaldos), `uninstall`, `doctor` (prueba los hooks en tus shells y muestra lo que Codex envía de verdad), `stats`, `usage`, `audit`, `log`, `brief`, `try`, `guard`, `config`.
+- **Hooks**: repo brief at session start, prompt modes (`+`, `quick:`, `ask:`, `plan:`) and per-task playbooks, suggested paths, token diet, huge-output warning, verify gate, and a context and rate-limit meter.
+- **Guard**: stops these actions, also inside scripts, `package.json`, pipes and PowerShell blocks. An approval covers that action, in that turn.
+  - unrecoverable deletes;
+  - discarding uncommitted work;
+  - history rewrites;
+  - secrets;
+  - databases;
+  - infrastructure;
+  - killing programs by name;
+  - global configuration;
+  - system changes.
+- **Skills** (`bcx` plugin): `$bcx:commit`, `$bcx:refine`, `$bcx:handoff`, `$bcx:debug`.
+- **CLI**:
+  - `install` (stable copy in `~/.codex/better-codex/app`, with backups) and `uninstall`;
+  - `doctor` (runs the hooks through your shells and shows what Codex actually sent);
+  - `stats`, `usage`, `audit`, `log`, `brief`, `try`, `guard`, `config`.

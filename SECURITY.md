@@ -1,18 +1,38 @@
-# Seguridad
+# Security
 
-## Qué protege el guard, y qué no
+**English** · [Español](SECURITY.es.md)
 
-El guard protege contra **errores de un agente que coopera**: un `rm -rf` de más, un `reset --hard` sobre tu trabajo sin commit, un `push --force` a main, leer un `.env` que luego viaja al modelo. Revisa cada comando y parche antes de que corran, incluidos los scripts de modo código, los bloques `{ }` de PowerShell, los comandos por tubería, los scripts `.ps1`/`.sh`, los scripts de `package.json` y el código que Codex escribió en la sesión y luego ejecuta.
+## What the guard protects against, and what it doesn't
 
-No es un sandbox ni protege contra un agente malicioso: analiza texto con heurísticas, así que un programa lo bastante indirecto puede pasar. Úsalo junto con el sandbox y las aprobaciones de Codex, no en su lugar.
+The guard protects you from **the mistakes of a cooperative agent**: one `rm -rf` too many, a `reset --hard` over your uncommitted work, a `push --force` to main, or reading a `.env` whose contents then travel to the model.
 
-Todo corre en tu máquina. better-codex no hace llamadas de red; guarda su estado y métricas en `~/.codex/better-codex/` (el último prompt de cada sesión se guarda localmente y se borra a los 7 días; las métricas no guardan prompts).
+It inspects every command and patch before it runs, including:
 
-## Reportar un hueco
+- code-mode scripts;
+- PowerShell `{ }` blocks;
+- piped commands;
+- `.ps1` and `.sh` scripts;
+- `package.json` scripts;
+- code that Codex wrote earlier in the session and then runs.
 
-Si encuentras un comando destructivo que el guard deja pasar, o uno inofensivo que detiene sin motivo:
+**It is not a sandbox, and it does not protect against a malicious agent.** It reads command text with heuristics, so a sufficiently indirect program can get past it. Use it alongside Codex's sandbox and approvals, not instead of them.
 
-1. Comprueba con `bcx guard "<comando>"` qué decide hoy.
-2. Abre un issue con el comando (sin datos privados), qué esperabas y qué pasó.
+## Your data
 
-Para un hueco que permita algo grave sin preguntar (borrar datos, filtrar secretos), escribe primero por privado al autor desde su perfil de GitHub antes de publicarlo.
+Everything runs on your machine, and better-codex makes no network calls. It keeps its state and metrics in `~/.codex/better-codex/`:
+
+- **Per-session state**: the last prompt you sent and Codex's last reply. It's used to tie a "yes" to the question it answers, and it's deleted after 7 days.
+- **Metrics** (`events.jsonl`): no prompts. They do record the commands the guard stopped or allowed and the paths the diet skipped, trimmed to 160 characters. The file rotates at 2 MB, and `BCX_NO_METRICS=1` turns metrics off.
+
+## Supported versions
+
+Fixes go into the latest version. Update with `git pull` and `node bin/bcx.js install`.
+
+## Reporting a gap
+
+If you find a destructive command the guard lets through, or a harmless one it stops for no reason:
+
+1. Check what it decides today with `bcx guard "<command>"`.
+2. [Open an issue](https://github.com/MarioACo/better-codex/issues) with the command (no private data), what you expected and what happened.
+
+**For a gap that lets something serious through without asking** (deleting data, leaking secrets), please report it privately first, with the **Report a vulnerability** button in the repository's **Security** tab, rather than in a public issue.

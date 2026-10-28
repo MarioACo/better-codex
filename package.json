@@ -19,7 +19,9 @@
     "templates",
     "plugins",
     ".agents",
-    "CHANGELOG.md"
+    "README.es.md",
+    "CHANGELOG.md",
+    "CHANGELOG.es.md"
   ],
   "engines": {
     "node": ">=20"

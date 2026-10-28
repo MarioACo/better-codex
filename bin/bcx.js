@@ -124,7 +124,7 @@ const commands = {
     for (const c of checks) console.log(`  ${mark(c.status)} ${c.label.padEnd(15)} ${dim(c.detail)}`)
     console.log(bold(`\n${L('Hooks ejecutados como lo hará Codex', 'Hooks run the way Codex will')}`))
     for (const r of smoke) console.log(`  ${mark(r.ok ? 'ok' : 'fail')} ${r.shell.padEnd(11)} ${r.event.padEnd(17)} ${dim(`${r.ms} ms`)}${r.error ? red(`  ${r.error}`) : ''}`)
-    console.log(bold(`\n${L('Lo que Codex ha enviado de verdad', 'What Codex has really sent')}`))
+    console.log(bold(`\n${L('Lo que Codex ha enviado de verdad', 'What Codex has actually sent')}`))
     const ago = ms => (ms < 60000 ? L('hace instantes', 'just now') : ms < 3600000 ? L(`hace ${Math.round(ms / 60000)} min`, `${Math.round(ms / 60000)} min ago`) : ms < 86400000 ? L(`hace ${Math.round(ms / 3600000)} h`, `${Math.round(ms / 3600000)} h ago`) : L(`hace ${Math.round(ms / 86400000)} d`, `${Math.round(ms / 86400000)} d ago`))
     if (live.every(l => !l.count)) {
       console.log(yellow(L('  Nada todavía. Abre Codex, aprueba los hooks en /hooks y escribe un prompt.', '  Nothing yet. Open Codex, trust the hooks in /hooks and send a prompt.')))
