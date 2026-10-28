@@ -62,7 +62,7 @@ const version = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).ver
 
 const commands = {
   async install() {
-    const { install } = await import('../src/install.js')
+    const { appDir, findCodex, install, tuiCommand } = await import('../src/install.js')
     const dryRun = flag('dry-run')
     const steps = install({ dryRun, hooks: !flag('no-hooks'), agents: !flag('no-agents'), plugins: !flag('no-plugins') })
     const label = { app: 'app', hooks: 'hooks.json', agents: 'AGENTS.md', plugins: 'plugins' }
@@ -73,12 +73,16 @@ const commands = {
       if (step.backup) console.log(dim(`      ${L('respaldo', 'backup')}: ${step.backup}`))
       if (step.note) console.log(yellow(`      ${step.note}`))
     }
-    if (!dryRun) {
-      const { appDir, findCodex, tuiCommand } = await import('../src/install.js')
+    const hooksStep = steps.find(s => s.id === 'hooks')
+    if (!dryRun && hooksStep?.trusted) {
+      console.log(`\n${green('✓')} ${L('Ya aprobaste estos hooks en Codex: no tienes que hacer nada más.', 'You already trusted these hooks in Codex: nothing else to do.')}`)
+    } else if (!dryRun && hooksStep) {
+      const open = tuiCommand(findCodex())
       console.log(`\n${bold(L('Falta un paso tuyo', 'One step left, yours'))}`)
+      if (hooksStep.retrust) console.log(yellow(L('  Los hooks cambiaron desde que los aprobaste, así que Codex te los vuelve a pedir.', 'The hooks changed since you trusted them, so Codex asks again.')))
       console.log(L(
-        `  1. Abre Codex en una terminal:  ${tuiCommand(findCodex())}\n  2. Escribe /hooks y confía en los 5 de better-codex.\n  Codex no ejecuta hooks que no hayas aprobado (ni avisa en la app ni en \`codex exec\`); si cambian, te los vuelve a pedir.`,
-        `  1. Open Codex in a terminal:  ${tuiCommand(findCodex())}\n  2. Type /hooks and trust the 5 from better-codex.\n  Codex never runs hooks you have not approved (and says nothing in the app or in \`codex exec\`); it asks again if they change.`
+        `  1. Abre Codex en una terminal:  ${open}\n  2. Escribe /hooks y confía en los 5 de better-codex.\n  Codex no ejecuta hooks que no hayas aprobado (ni avisa en la app ni en \`codex exec\`); si cambian, te los vuelve a pedir.`,
+        `  1. Open Codex in a terminal:  ${open}\n  2. Type /hooks and trust the 5 from better-codex.\n  Codex never runs hooks you have not approved (and says nothing in the app or in \`codex exec\`); it asks again if they change.`
       ))
       const cli = `node "${join(appDir(), 'bin', 'bcx.js')}"`
       console.log(dim(L(`  Luego: ${cli} doctor   (o \`npm link\` en el repo para tener \`bcx\`)`, `  Then: ${cli} doctor   (or \`npm link\` in the repo to get \`bcx\`)`)))

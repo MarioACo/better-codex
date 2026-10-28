@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="940" height="426" viewBox="0 0 940 426" role="img" aria-labelledby="t d">
+<title id="t">better-codex guard</title>
+<desc id="d">Codex wants to delete a folder holding an uncommitted file: it explains the risk and asks. After the yes, it tries to delete through a path in a variable and better-codex stops it.</desc>
+<style>
+text,.band{opacity:0}
+text{font:14px ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;fill:#c9d1d9}
+.p{fill:#58a6ff;font-weight:700}.u{fill:#f0f6fc;font-weight:700}.b{fill:#7ee787}.c{fill:#c9d1d9}.k{fill:#d2a8ff}.o{fill:#8b949e}.g{fill:#ff7b72;font-weight:700}.y{fill:#ffa657}
+.title{font-size:12px;fill:#8b949e;opacity:1;animation:none}
+@keyframes l0{0%,2.50%{opacity:0}4.06%,96.88%{opacity:1}100%{opacity:0}}.l0{animation:l0 16s infinite}
+@keyframes l1{0%,10.00%{opacity:0}11.56%,96.88%{opacity:1}100%{opacity:0}}.l1{animation:l1 16s infinite}
+@keyframes l2{0%,13.75%{opacity:0}15.31%,96.88%{opacity:1}100%{opacity:0}}.l2{animation:l2 16s infinite}
+@keyframes l3{0%,16.25%{opacity:0}17.81%,96.88%{opacity:1}100%{opacity:0}}.l3{animation:l3 16s infinite}
+@keyframes l4{0%,22.50%{opacity:0}24.06%,96.88%{opacity:1}100%{opacity:0}}.l4{animation:l4 16s infinite}
+@keyframes l5{0%,24.38%{opacity:0}25.94%,96.88%{opacity:1}100%{opacity:0}}.l5{animation:l5 16s infinite}
+@keyframes l6{0%,26.25%{opacity:0}27.81%,96.88%{opacity:1}100%{opacity:0}}.l6{animation:l6 16s infinite}
+@keyframes l7{0%,36.25%{opacity:0}37.81%,96.88%{opacity:1}100%{opacity:0}}.l7{animation:l7 16s infinite}
+@keyframes l8{0%,43.75%{opacity:0}45.31%,96.88%{opacity:1}100%{opacity:0}}.l8{animation:l8 16s infinite}
+@keyframes l9{0%,48.75%{opacity:0}50.31%,96.88%{opacity:1}100%{opacity:0}}.l9{animation:l9 16s infinite}
+@keyframes l10{0%,50.00%{opacity:0}51.56%,96.88%{opacity:1}100%{opacity:0}}.l10{animation:l10 16s infinite}
+@keyframes l11{0%,58.75%{opacity:0}60.31%,96.88%{opacity:1}100%{opacity:0}}.l11{animation:l11 16s infinite}
+@keyframes l12{0%,60.62%{opacity:0}62.19%,96.88%{opacity:1}100%{opacity:0}}.l12{animation:l12 16s infinite}
+@keyframes l13{0%,62.50%{opacity:0}64.06%,96.88%{opacity:1}100%{opacity:0}}.l13{animation:l13 16s infinite}
+@keyframes band{0%,48.75%{opacity:0}50.31%,96.88%{opacity:1}100%{opacity:0}}.band{animation:band 16s infinite}
+@media (prefers-reduced-motion:reduce){text,.band{animation:none!important;opacity:1!important}}
+</style>
+<rect width="940" height="426" rx="10" fill="#0d1117"/>
+<rect width="940" height="34" rx="10" fill="#161b22"/><rect y="24" width="940" height="10" fill="#161b22"/>
+<circle cx="22" cy="17" r="6" fill="#ff5f57"/><circle cx="42" cy="17" r="6" fill="#febc2e"/><circle cx="62" cy="17" r="6" fill="#28c840"/>
+<text class="title" x="470" y="21" text-anchor="middle">codex · demo-repo</text>
+<rect class="band" x="12" y="276" width="916" height="48" rx="6" fill="#ff7b72" fill-opacity=".1" stroke="#ff7b72" stroke-opacity=".35"/>
+<text class="l0" x="24" y="58" xml:space="preserve"><tspan class="p">› </tspan><tspan class="u">Delete the whole data folder, I don't need it anymore.</tspan></text>
+<text class="l1" x="24" y="92" xml:space="preserve"><tspan class="b">• </tspan><tspan class="c">First I'll check what data/ contains and its git status.</tspan></text>
+<text class="l2" x="24" y="114" xml:space="preserve"><tspan class="k">  $ Get-ChildItem .\data; git status --short -- data</tspan></text>
+<text class="l3" x="24" y="136" xml:space="preserve"><tspan class="o">    ?? data/ventas-octubre.csv</tspan></text>
+<text class="l4" x="24" y="158" xml:space="preserve"><tspan class="b">• </tspan><tspan class="c">data/ holds ventas-octubre.csv, untracked by git and unrecoverable.</tspan></text>
+<text class="l5" x="24" y="180" xml:space="preserve"><tspan class="c">  To delete it I would run: </tspan><tspan class="k">Remove-Item -LiteralPath .\data -Recurse -Force</tspan></text>
+<text class="l6" x="24" y="202" xml:space="preserve"><tspan class="c">  Safer alternative: move it to a backup. Do you confirm the deletion?</tspan></text>
+<text class="l7" x="24" y="236" xml:space="preserve"><tspan class="p">› </tspan><tspan class="u">yes</tspan></text>
+<text class="l8" x="24" y="270" xml:space="preserve"><tspan class="k">  $ $target = (Resolve-Path .\data).Path; Remove-Item -LiteralPath $target -Recurse -Force</tspan></text>
+<text class="l9" x="24" y="292" xml:space="preserve"><tspan class="g">  🛡 better-codex BLOCKED (high): </tspan><tspan class="y">Delete files or folders — deletes $target</tspan></text>
+<text class="l10" x="24" y="314" xml:space="preserve"><tspan class="y">     (a variable: the path is only known when it runs) recursively.</tspan></text>
+<text class="l11" x="24" y="348" xml:space="preserve"><tspan class="b">• </tspan><tspan class="c">The guard blocked the command because it used a variable for the path.</tspan></text>
+<text class="l12" x="24" y="370" xml:space="preserve"><tspan class="c">  I need to run exactly: </tspan><tspan class="k">Remove-Item -LiteralPath '…\data' -Recurse -Force</tspan></text>
+<text class="l13" x="24" y="392" xml:space="preserve"><tspan class="c">  Do you confirm this exact command?</tspan></text>
+</svg>

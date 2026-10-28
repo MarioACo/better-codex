@@ -81,6 +81,33 @@ export function removeHooks(config = {}) {
   return { ...config, hooks }
 }
 
+const snakeCase = event => event.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase()
+const trustKey = key => toPosix(key).toLowerCase()
+
+// Which of our hooks Codex has a trust record for: [hooks.state.'<hooks.json>:<event>:<group>:<handler>']
+// in config.toml. The record also holds a hash of the definition that is internal to Codex, so a record
+// only proves trust while hooks.json is unchanged since it was trusted.
+export function hookTrust(config = readJson(hooksPath(), {}) || {}, toml = readText(join(codexHome(), 'config.toml'), '')) {
+  const recorded = new Set()
+  let key = null
+  for (const line of toml.split(/\r?\n/)) {
+    const header = /^\s*\[\s*hooks\.state\.(['"])(.+)\1\s*\]\s*$/.exec(line)
+    if (header) key = header[1] === '"' ? header[2].replace(/\\\\/g, '\\') : header[2]
+    else if (/^\s*\[/.test(line)) key = null
+    else if (key && /^\s*trusted_hash\s*=/.test(line)) recorded.add(trustKey(key))
+  }
+  const ours = []
+  for (const [event, groups] of Object.entries(config.hooks || {})) {
+    for (const [g, group] of (Array.isArray(groups) ? groups : []).entries()) {
+      for (const [h, handler] of (group.hooks || []).entries()) {
+        if (isOurs(handler)) ours.push(`${hooksPath()}:${snakeCase(event)}:${g}:${h}`)
+      }
+    }
+  }
+  const missing = ours.filter(k => !recorded.has(trustKey(k)))
+  return { total: ours.length, trusted: ours.length - missing.length, missing }
+}
+
 export function mergeHooks(config = {}, ours = ourHooks()) {
   const next = removeHooks(config)
   for (const [event, groups] of Object.entries(ours)) next.hooks[event] = [...(next.hooks[event] || []), ...groups]
@@ -170,7 +197,11 @@ export function install({ dryRun = false, hooks = true, agents = true, plugins =
     }
     // Hook definitions only: [hooks.state.'…'] is where Codex records which hooks you trusted.
     const inline = /^\s*\[\[?hooks(\]|\.(?!state\b))/m.test(readText(join(codexHome(), 'config.toml'), ''))
-    steps.push({ id: 'hooks', file: hooksPath(), changed, backup: saved, note: inline ? 'config.toml also has inline [hooks]: Codex merges both and warns at startup' : null })
+    // A changed definition gets a new hash in Codex, so it needs trusting again.
+    const trust = hookTrust(next)
+    const trusted = !changed && trust.total > 0 && !trust.missing.length
+    const retrust = changed && trust.trusted > 0
+    steps.push({ id: 'hooks', file: hooksPath(), changed, trusted, retrust, backup: saved, note: inline ? 'config.toml also has inline [hooks]: Codex merges both and warns at startup' : null })
   }
 
   if (agents) {

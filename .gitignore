@@ -3,3 +3,4 @@ coverage/
 *.log
 .DS_Store
 .codex/handoff.md
+docs/*.static.svg

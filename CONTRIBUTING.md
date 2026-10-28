@@ -48,7 +48,7 @@ Whatever gets injected into the model stays in the conversation for the rest of 
 
 ## Docs
 
-The README, this guide, the security policy and the changelog come in English and Spanish (`*.es.md`). If you change one, change both, or say in the PR which one is missing.
+The README, this guide, the security policy and the changelog come in English and Spanish (`*.es.md`). If you change one, change both, or say in the PR which one is missing. The animated demos in `docs/` come from `node scripts/demo-svg.mjs`; add `--static` to check the layout with every line visible.
 
 ## Commits
 

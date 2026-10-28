@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { smokeTest } from '../src/doctor.js'
-import { agentsPath, appDir, blockOf, hasOurHooks, hookCommand, hooksPath, install, installedCommand, mergeHooks, removeHooks, tuiCommand, uninstall, withBlock, withoutBlock } from '../src/install.js'
+import { agentsPath, appDir, blockOf, hasOurHooks, hookCommand, hooksPath, hookTrust, install, installedCommand, mergeHooks, removeHooks, tuiCommand, uninstall, withBlock, withoutBlock } from '../src/install.js'
 import { toPosix } from '../src/util.js'
 import { isolate, tempDir } from './helpers.js'
 
@@ -99,3 +99,41 @@ test('trusting hooks writes [hooks.state] to config.toml: that is not a second s
   writeFileSync(join(home, 'config.toml'), '[[hooks.PreToolUse]]\nmatcher = "Bash"\n')
   assert.match(install({ plugins: false, agents: false }).find(s => s.id === 'hooks').note, /inline \[hooks\]/)
 })
+
+test('install knows when you already trusted the hooks, and when a change needs trusting again', () => {
+  const home = isolate()
+  writeFileSync(join(home, 'hooks.json'), JSON.stringify(USER_HOOKS)) // yours come first: ours are group 1 in PreToolUse
+  const first = install({ plugins: false, agents: false }).find(s => s.id === 'hooks')
+  assert.equal(first.trusted, false)
+  assert.equal(first.retrust, false)
+  assert.equal(hookTrust().trusted, 0)
+
+  // What Codex writes when you trust them in /hooks (Windows paths in single quotes, as seen live).
+  const config = readJsonFile(hooksPath())
+  const records = []
+  for (const [event, groups] of Object.entries(config.hooks)) {
+    groups.forEach((group, g) => group.hooks.forEach((h, i) => {
+      if (/bcx\.js/.test(h.command)) records.push(`[hooks.state.'${hooksPath()}:${event.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase()}:${g}:${i}']\ntrusted_hash = "sha256:abc"`)
+    }))
+  }
+  assert.ok(records.some(r => r.includes(':pre_tool_use:1:0')))
+  writeFileSync(join(home, 'config.toml'), `model = "x"\n[hooks.state]\n${records.join('\n')}\n[features]\nhooks = true\n`)
+  assert.deepEqual(hookTrust(), { total: 5, trusted: 5, missing: [] })
+  assert.equal(install({ plugins: false, agents: false }).find(s => s.id === 'hooks').trusted, true)
+
+  // One record missing: not trusted.
+  writeFileSync(join(home, 'config.toml'), records.slice(1).join('\n'))
+  assert.equal(hookTrust().trusted, 4)
+  assert.equal(install({ plugins: false, agents: false }).find(s => s.id === 'hooks').trusted, false)
+
+  // Trusted, then our definition changes (e.g. another node path): Codex will ask again.
+  writeFileSync(join(home, 'config.toml'), records.join('\n'))
+  const edited = readJsonFile(hooksPath())
+  edited.hooks.Stop.find(g => /bcx\.js/.test(g.hooks[0].command)).hooks[0].timeout = 99
+  writeFileSync(hooksPath(), JSON.stringify(edited))
+  const after = install({ plugins: false, agents: false }).find(s => s.id === 'hooks')
+  assert.equal(after.trusted, false)
+  assert.equal(after.retrust, true)
+})
+
+const readJsonFile = path => JSON.parse(readFileSync(path, 'utf8'))

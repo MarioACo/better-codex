@@ -11,7 +11,8 @@ Encontrado probando con Codex 0.164 de verdad (extensión de VS Code, Windows):
 - **Resumen del repo**: en Windows le dice a Codex que use `npm.cmd`, porque PowerShell suele bloquear `npm.ps1`. Si `rg` no está instalado, le dice que busque con `git grep -n`. Cada una de estas era una llamada fallida en cada sesión.
 - **Instalación**: imprime el comando exacto para abrir Codex y aprobar los hooks (`--no-daemon` con el CLI que trae la app de escritorio). Ya no confunde `[hooks.state]` de `config.toml` con un segundo juego de hooks.
 - **doctor / log**: dicen qué falta de verdad, y distinguen «permitido» de «ejecutado».
-- **Documentación**: README, guía para contribuir, política de seguridad y registro de cambios en inglés y español. El README suma un ejemplo de una sesión real y una sección de problemas comunes.
+- **Instalación y doctor saben si ya aprobaste los hooks** (por los registros de aprobación de Codex en `config.toml`). `install` solo te pide aprobarlos otra vez si de verdad cambiaron, y `doctor` muestra `trusted 5/5`.
+- **Documentación**: README, guía para contribuir, política de seguridad y registro de cambios en inglés y español. El README suma una demo animada de una sesión real (`scripts/demo-svg.mjs`), una sección de problemas comunes y un consejo para apagar los skills de plugins que no usas.
 
 ## 0.1.0 — 2026-10-27
 

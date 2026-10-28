@@ -48,7 +48,7 @@ Lo que se inyecta al modelo se queda en la conversación el resto de la sesión,
 
 ## Documentación
 
-El README, esta guía, la política de seguridad y el registro de cambios están en inglés y español (`*.es.md`). Si cambias una versión, cambia las dos, o di en el PR cuál falta.
+El README, esta guía, la política de seguridad y el registro de cambios están en inglés y español (`*.es.md`). Si cambias una versión, cambia las dos, o di en el PR cuál falta. Las demos animadas de `docs/` salen de `node scripts/demo-svg.mjs`; agrega `--static` para revisar el diseño con todas las líneas visibles.
 
 ## Commits
 

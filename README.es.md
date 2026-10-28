@@ -17,26 +17,13 @@ Todo corre en tu máquina, sin dependencias y sin conexiones a internet. Inspira
 
 ## Así se ve
 
-Una sesión real con Codex 0.164 en la extensión de VS Code, en Windows. El repo tiene una carpeta con un archivo que nunca se subió a git:
+<p align="center">
+  <img src="docs/demo.svg" alt="Se le pide a Codex borrar una carpeta con un archivo sin commit. Revisa la carpeta, explica el riesgo, sugiere un respaldo y pregunta. Tras el sí, intenta borrar con la ruta guardada en una variable, y better-codex lo detiene, así que Codex vuelve a preguntar con el comando exacto." width="940">
+</p>
 
-```text
-Tú:     Borra la carpeta data completa, ya no la necesito.
+<p align="center"><sub>Resumen de una sesión real (Codex 0.164, extensión de VS Code, Windows).</sub></p>
 
-Codex:  La carpeta contiene clientes.csv y ventas-octubre.csv; este último no está
-        versionado y podría perderse definitivamente.
-
-        Comando exacto solicitado:
-          Remove-Item -LiteralPath '…\demo-repo\data' -Recurse -Force
-
-        Esto eliminará permanentemente la carpeta y ambos archivos. Alternativa segura:
-        moverla primero a una carpeta de respaldo temporal.
-
-        ¿Apruebas que ejecute exactamente ese comando?
-
-Tú:     sí
-```
-
-Tu «sí» cubre ese comando exacto, una vez. Si después Codex ejecuta otra cosa, o pone la ruta en una variable (`$target`) en vez de escribirla, el guard lo detiene y Codex tiene que volver a preguntar.
+El repo tiene una carpeta con un archivo que nunca se subió a git. Codex la revisa, explica qué se perdería, sugiere un respaldo y pregunta. Tu «sí» cubre el comando exacto que te mostró, una vez. Cuando después intentó otra cosa, borrar con la ruta en una variable (`$target`), el guard lo detuvo, y Codex tuvo que volver a preguntar con el comando exacto.
 
 ## Por qué
 
@@ -188,6 +175,17 @@ bcx try "+arregla el login que truena"   # lo que se agregaría a ese prompt
 `bcx stats` separa tus sesiones en antes y después de instalar, y compara la entrada por turno, las herramientas por turno y el contexto medio. Todo lo que hace better-codex queda registrado en `~/.codex/better-codex/events.jsonl`.
 
 El costo fijo es de unos **660 tokens por sesión**: las reglas y la descripción de los skills, que se guardan en caché. A eso se suman el brief y, solo cuando hay algo útil que agregar, ~20–300 tokens por prompt.
+
+**Consejo: los plugins que no usas también cuestan tokens.** Los skills de cada plugin instalado se le describen al modelo en cada sesión. En una instalación real, Figma, Notion, Google Drive y Work Pets sumaban unos 3,000 tokens por sesión, y ninguno se había usado nunca. Al apagar sus skills, la sección de skills bajó de ~4,200 a ~1,000 tokens:
+
+```toml
+# ~/.codex/config.toml: una entrada por skill
+[[skills.config]]
+name = "figma:figma-use"
+enabled = false
+```
+
+Los nombres de los skills están en cualquier archivo de sesión de `~/.codex/sessions`, dentro de `<skills_instructions>`. Borra las entradas para volver a activarlos.
 
 ## Configurar
 

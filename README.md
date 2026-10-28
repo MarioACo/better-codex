@@ -17,26 +17,13 @@ Everything runs on your machine, with no dependencies and no network calls. Insp
 
 ## What it looks like
 
-A real session with Codex 0.164 in the VS Code extension on Windows, translated from Spanish. The repo has a folder with a file that was never committed:
+<p align="center">
+  <img src="docs/demo.en.svg" alt="Codex is asked to delete a folder that holds an uncommitted file. It checks the folder, explains the risk, suggests a backup and asks. After the user says yes, it tries to delete through a path stored in a variable, and better-codex blocks it, so Codex asks again with the exact command." width="940">
+</p>
 
-```text
-You:    Delete the whole data folder, I don't need it anymore.
+<p align="center"><sub>Condensed from a real session (Codex 0.164, VS Code extension, Windows), translated from Spanish.</sub></p>
 
-Codex:  The folder contains clientes.csv and ventas-octubre.csv. The second one is not
-        tracked by git and could be lost for good.
-
-        Exact command:
-          Remove-Item -LiteralPath '…\demo-repo\data' -Recurse -Force
-
-        This permanently deletes the folder and both files. Safer alternative: move it
-        to a temporary backup folder first.
-
-        Do you approve running exactly that command?
-
-You:    yes
-```
-
-Your yes covers that exact command, once. If Codex then runs something else, or puts the path in a variable (`$target`) instead of writing it out, the guard blocks it and Codex has to ask again.
+The repo has a folder with a file that was never committed. Codex checks it, explains what would be lost, suggests a backup and asks. Your yes covers the exact command it showed you, once. When it then tried something else, a delete through a path in a variable (`$target`), the guard blocked it, and Codex had to ask again with the exact command.
 
 ## Why
 
@@ -188,6 +175,17 @@ bcx try "+fix the login that crashes"   # what would be added to that prompt
 `bcx stats` splits your sessions into before and after installing, and compares input per turn, tools per turn and average context. Everything better-codex does is logged to `~/.codex/better-codex/events.jsonl`.
 
 The fixed cost is about **660 tokens per session**: the rules and the skill descriptions, which get cached. On top of that come the brief and, only when there's something useful to add, ~20–300 tokens per prompt.
+
+**Tip: plugins you don't use cost tokens too.** The skills of every installed plugin are described to the model in every session. In one real setup, Figma, Notion, Google Drive and Work Pets added about 3,000 tokens per session, and none of them had ever been used. Turning their skills off brought the skills section from ~4,200 to ~1,000 tokens:
+
+```toml
+# ~/.codex/config.toml: one entry per skill
+[[skills.config]]
+name = "figma:figma-use"
+enabled = false
+```
+
+The skill names are in any session file in `~/.codex/sessions`, inside `<skills_instructions>`. Delete the entries to turn the skills back on.
 
 ## Configure
 

@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { EVENTS } from './hooks.js'
-import { agentsBlock, agentsPath, appDir, blockOf, findCodex, hasOurHooks, hookCommand, hooksPath, installedCommand, marketplaceRoot, runCodex } from './install.js'
+import { agentsBlock, agentsPath, appDir, blockOf, findCodex, hasOurHooks, hookCommand, hooksPath, hookTrust, installedCommand, marketplaceRoot, runCodex } from './install.js'
 import { readEvents } from './metrics.js'
 import { ROOT } from './paths.js'
 import { readSeen } from './seen.js'
@@ -107,6 +107,10 @@ export function doctor({ offline = false } = {}) {
 
   const hooks = readJson(hooksPath(), null)
   add(hasOurHooks(hooks || {}) ? 'ok' : 'warn', 'hooks.json', hasOurHooks(hooks || {}) ? hooksPath() : `${hooksPath()} (run: bcx install)`)
+  if (hasOurHooks(hooks || {})) {
+    const trust = hookTrust(hooks)
+    add(trust.missing.length ? 'warn' : 'ok', 'trusted', trust.missing.length ? `${trust.trusted}/${trust.total} — open Codex, type /hooks and trust them` : `${trust.total}/${trust.total} in /hooks`)
+  }
 
   const block = blockOf(readText(agentsPath(), ''))
   add(block === agentsBlock() ? 'ok' : 'warn', 'AGENTS.md', !block ? 'missing (run: bcx install)' : block === agentsBlock() ? agentsPath() : 'outdated (run: bcx install)')
