@@ -1,8 +1,11 @@
 import { existsSync, realpathSync, statSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
-import { expand, shellAliases, tilde } from './aliases.js'
+import { expand, shellAliases, snapshotFile, tilde } from './aliases.js'
+import { allowedFor, allowFile } from './allow.js'
+import { configPath } from './config.js'
 import { gitRoot } from './git.js'
+import { codexHome } from './paths.js'
 import { enclosed, pathArgs, patchFiles, segments, shellWrites, toolCommands, verbOf } from './shell.js'
 import { clip, readJson, readText, run, toPosix } from './util.js'
 
@@ -111,6 +114,14 @@ export const RULES = {
       en: 'it affects every project and tool of the user, not just this one (e.g. their git identity or npm registry)'
     },
     safer: 'apply it to this repository only (git config without --global, a project .npmrc)'
+  },
+  'bcx-settings': {
+    title: { es: 'Cambiar los permisos de better-codex', en: 'Change better-codex’s own settings' },
+    risk: {
+      es: 'Codex podría darse permiso a sí mismo o apagar la protección',
+      en: 'Codex could grant itself permission or switch the protection off'
+    },
+    safer: 'give the user the exact bcx command and let them run it'
   }
 }
 
@@ -201,7 +212,9 @@ export function gitStatusMap(root) {
 // created: files Codex created this session. touched: files Codex changed this session.
 // userDirty: files that had uncommitted changes Codex did not make (yours) when a turn started.
 // aliases: your shell aliases and functions (src/aliases.js), read from your profiles if not given.
-function context({ cwd, created = [], touched = [], userDirty = [], aliases }) {
+// allow: the repo's `bcx allow` rules (src/allow.js), read when a finding needs them if not given.
+// session: picks Codex's shell snapshot for this session among the aliases.
+function context({ cwd, created = [], touched = [], userDirty = [], aliases, allow, session }) {
   // Asking git where the repo is spawns a process (~100 ms on Windows) and most commands
   // (rg, cat, git status…) never need it: only the rules that do pay for it.
   let repo = null
@@ -215,7 +228,7 @@ function context({ cwd, created = [], touched = [], userDirty = [], aliases }) {
   let defs = aliases
   const loadDefs = () => {
     try {
-      return shellAliases()
+      return shellAliases({ snapshot: snapshotFile(session) })
     } catch {
       return {}
     }
@@ -230,6 +243,20 @@ function context({ cwd, created = [], touched = [], userDirty = [], aliases }) {
     expanding: new Set(),
     // Scripts, package.json scripts and profile definitions being read: your code, not what Codex typed.
     reading: 0,
+    // You allowed this kind of action in this repo with `bcx allow`: generated/ covers generated/x.
+    allowed(found) {
+      allow ??= root() ? allowedFor(canon(root())) : []
+      return allow.some(rule => {
+        if (rule.rule !== found.rule) return false
+        if (!rule.paths) return rule.detail === baseDetail(found.detail)
+        const paths = found.save?.paths
+        if (!paths?.length || found.save.git) return false
+        return paths.every(p => {
+          const rel = ctx.inside(p) ? norm(ctx.rel(p)) : null
+          return rel && rule.paths.some(a => rel === a || rel.startsWith(a + '/'))
+        })
+      })
+    },
     get root() {
       return root()
     },
@@ -476,6 +503,8 @@ function checkPatterns(seg) {
 
 function checkPatch(toolInput, ctx) {
   const files = patchFiles(toolInput)
+  const settings = files.find(f => isSettings(f.path, ctx))
+  if (settings) return { rule: 'bcx-settings', severity: 'critical', detail: `edits ${settings.path}` }
   const deleted = files.filter(f => f.op === 'delete')
   const secrets = files.filter(f => f.op !== 'add' && isSecretPath(f.path))
   if (secrets.length) return { rule: 'secrets-write', severity: 'high', detail: `edits ${secrets.map(f => f.path).join(', ')}`, save: { paths: secrets.map(f => ctx.abs(f.path)) } }
@@ -522,6 +551,50 @@ function checkGlobalConfig(seg) {
     return write && !/--location[= ]project/.test(seg.text) ? hit : null
   }
   return seg.verb === 'setx' ? hit : null
+}
+
+// Codex giving itself permission or switching protection off: bcx allow "…", bcx config set guard off,
+// bcx uninstall, or writing better-codex's settings, its allow list or ~/.codex/hooks.json itself.
+const SETTINGS = () => [allowFile(), configPath(), join(codexHome(), 'hooks.json')].map(canon)
+const atHome = p => String(p).replace(/^["']|["']$/g, '').replace(/^(~|\$HOME|\$\{HOME\}|\$env:USERPROFILE|%USERPROFILE%)(?=[\\/])/i, () => homedir())
+const isSettings = (path, ctx) => SETTINGS().includes(canon(ctx.abs(atHome(path))))
+const SETTINGS_FILE = /better-codex[\\/](allow|config)\.json|\.codex[\\/]hooks\.json/i
+const WRITE_CALL = /\b(writeFile\w*|appendFile\w*|WriteAll\w*|Set-Content|Add-Content|Out-File|json\.dump|unlink\w*|copyFile\w*|rename\w*)\b|open\([^)]*["'][wa]/i
+
+function bcxArgs(seg) {
+  const a = seg.argv
+  if (/^(bcx|better-codex)$/.test(seg.verb)) return a.slice(1)
+  const script = a.findIndex((x, i) => i > 0 && /(^|[\\/])bcx\.js$/i.test(x))
+  if (seg.verb === 'node' && script !== -1) return a.slice(script + 1)
+  const pkg = /^(npx|pnpx|bunx|pnpm|yarn)$/.test(seg.verb) ? a.findIndex(x => /(^|\/)better-codex(@[\w.-]+)?$/.test(x)) : -1
+  return pkg === -1 ? null : a.slice(pkg + 1)
+}
+
+function checkSettings(seg, ctx) {
+  const args = bcxArgs(seg)
+  const off = /^(false|off|no|n|0)$/i
+  const changes = args && ((args[0] === 'allow' && args.length > 1) || (args[0] === 'config' && args[1] === 'set' && /^(guard|undo)$/.test(args[2]) && off.test(args[3] ?? '')) || (args[0] === 'uninstall' && !args.includes('--dry-run')))
+  if (changes) return { rule: 'bcx-settings', severity: 'critical', detail: `${seg.text} changes what better-codex lets Codex do` }
+  const written = [...shellWrites(seg.text), ...(COPY_VERBS.has(seg.verb) ? pathArgs(seg.argv).slice(-1) : []), ...(DELETE_VERBS.has(seg.verb) ? pathArgs(seg.argv) : [])]
+  const file = written.find(p => isSettings(p, ctx))
+  if (file || (SETTINGS_FILE.test(seg.text) && WRITE_CALL.test(seg.text))) return { rule: 'bcx-settings', severity: 'critical', detail: `${seg.verb} writes ${file ?? 'better-codex settings or hooks.json'}` }
+  return null
+}
+
+// "(would lose: a.js, b.js)" changes from one time to the next; the action doesn't.
+const baseDetail = detail => String(detail).replace(/ \(would lose: [^)]*\)$/, '')
+
+// What `bcx allow` stores for a finding in this repo: the paths it touches, or the action itself.
+export function allowRule(found, cwd) {
+  const ctx = context({ cwd })
+  if (!ctx.root) return { error: 'not-a-repo' }
+  if (found.rule === 'bcx-settings') return { error: 'settings' }
+  const repo = canon(ctx.root)
+  const paths = found.save?.paths
+  if (!paths?.length || found.save.git) return { repo, rule: { rule: found.rule, detail: baseDetail(found.detail) } }
+  const rel = paths.map(p => (ctx.inside(p) ? norm(ctx.rel(p)) : null))
+  if (rel.some(p => !p)) return { error: 'outside' } // outside the repo, or the repo itself
+  return { repo, rule: { rule: found.rule, paths: rel } }
 }
 
 const INLINE_FLAG = { node: /^(-e|--eval|-p|--print)$/, bun: /^(-e|--eval)$/, deno: /^eval$/, python: /^-c$/, python3: /^-c$/, py: /^-c$/, ruby: /^-e$/, perl: /^-e$/, php: /^-r$/ }
@@ -744,10 +817,12 @@ function checkRunsText(seg, ctx, depth) {
 
 function inspectCommand(command, ctx, depth) {
   if (depth > 3) return null
-  if (REMOTE_EXEC.test(command)) return { rule: 'remote-exec', severity: 'high', detail: command.slice(0, 200), command: command.slice(0, 300) }
-  if (ENV_WRITE.test(command)) return { rule: 'global-config', severity: 'high', detail: 'sets a user or machine environment variable', command: command.slice(0, 300) }
-  const runtime = checkDecoded(command, ctx, depth) || checkRunsOutput(command, ctx, depth)
-  if (runtime) return runtime
+  const whole =
+    (REMOTE_EXEC.test(command) && { rule: 'remote-exec', severity: 'high', detail: command.slice(0, 200), command: command.slice(0, 300) }) ||
+    (ENV_WRITE.test(command) && { rule: 'global-config', severity: 'high', detail: 'sets a user or machine environment variable', command: command.slice(0, 300) }) ||
+    checkDecoded(command, ctx, depth) ||
+    checkRunsOutput(command, ctx, depth)
+  if (whole && !ctx.allowed(whole)) return whole
   for (const seg of segments(command)) {
     const found =
       checkDelete(seg, ctx) ||
@@ -756,23 +831,24 @@ function inspectCommand(command, ctx, depth) {
       checkPatterns(seg) ||
       checkKill(seg) ||
       checkGlobalConfig(seg) ||
+      checkSettings(seg, ctx) ||
       checkInline(seg, ctx) ||
       checkScript(seg, ctx, depth) ||
       checkNpmScript(seg, ctx, depth) ||
       checkRunsText(seg, ctx, depth) ||
       checkAlias(seg, ctx, depth)
     // What Codex ran is the outer command; the detail tells what it leads to.
-    if (found) return { ...found, command: seg.text.slice(0, 300), targets: pathArgs(seg.argv) }
+    if (found && !ctx.allowed(found)) return { ...found, command: seg.text.slice(0, 300), targets: pathArgs(seg.argv) }
   }
   return null
 }
 
 // The first risky thing a tool call would do, or null.
-export function inspect({ toolName, toolInput, cwd, created = [], touched = [], userDirty = [], aliases }) {
-  const ctx = context({ cwd, created, touched, userDirty, aliases })
+export function inspect({ toolName, toolInput, cwd, created = [], touched = [], userDirty = [], aliases, allow, session }) {
+  const ctx = context({ cwd, created, touched, userDirty, aliases, allow, session })
   if (/apply_patch|edit|write/i.test(toolName || '') || patchFiles(toolInput).length) {
     const found = checkPatch(toolInput, ctx)
-    if (found) return { ...found, command: 'apply_patch', targets: patchFiles(toolInput).map(f => f.path) }
+    if (found && !ctx.allowed(found)) return { ...found, command: 'apply_patch', targets: patchFiles(toolInput).map(f => f.path) }
   }
   for (const command of toolCommands(toolName, toolInput)) {
     const found = inspectCommand(command, ctx, 0)
@@ -811,7 +887,8 @@ const ASKS = {
   'remote-exec': /descarg|download|instal|script|ejecut|\brun\b|curl|iwr|irm|iex/iu,
   hidden: /escond|ocult|codific|base64|eval|iex|invoke-expression|ejecut|corr|\brun\b|hidden|encod|decod/iu,
   kill: /cerr|termin|\bmat|kill|stop|deten|proces|taskkill/iu,
-  'global-config': /global|config|identidad|identity|registr|variable|entorno|environment|setx|npmrc/iu
+  'global-config': /global|config|identidad|identity|registr|variable|entorno|environment|setx|npmrc/iu,
+  'bcx-settings': /bcx|better-codex|permis|allow|config|guard|hooks/iu
 }
 
 const words = text =>

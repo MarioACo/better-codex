@@ -1,6 +1,6 @@
 {
-  "name": "better-codex",
-  "version": "0.1.0",
+  "name": "@marioaco/better-codex",
+  "version": "0.2.0",
   "description": "Hooks, skills and metrics that make OpenAI Codex spend fewer tokens, answer better and ask before anything destructive.",
   "type": "module",
   "license": "MIT",
@@ -20,9 +20,14 @@
     "plugins",
     ".agents",
     "README.es.md",
+    "SECURITY.md",
+    "SECURITY.es.md",
     "CHANGELOG.md",
     "CHANGELOG.es.md"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=20"
   },
@@ -30,7 +35,8 @@
   "scripts": {
     "test": "node --test",
     "doctor": "node bin/bcx.js doctor --offline",
-    "check": "npm test && node bin/bcx.js doctor --offline"
+    "check": "npm test && node bin/bcx.js doctor --offline",
+    "prepublishOnly": "npm test"
   },
   "keywords": [
     "codex",

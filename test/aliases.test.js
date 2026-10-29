@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict'
+import { utimesSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { expand, shellAliases } from '../src/aliases.js'
+import { expand, shellAliases, snapshotFile } from '../src/aliases.js'
 import { inspect } from '../src/guard.js'
-import { repo, tempDir, write } from './helpers.js'
+import { isolate, repo, tempDir, write } from './helpers.js'
+
+const codexHome = isolate() // Codex's shell snapshots live in this test's own CODEX_HOME
 
 // A home with the usual places people keep aliases: .bashrc, .zshrc (sourcing another file) and a PowerShell profile.
 function profiles() {
@@ -80,4 +83,70 @@ test('guard: what an alias or function from your profile runs is what gets check
   assert.equal(found('rm -rf src')?.rule, 'delete')
   // without your profile the same words mean nothing
   assert.equal(inspect({ toolName: 'Bash', toolInput: { command: 'nuke tmp' }, cwd: root, aliases: {} }), null)
+})
+
+// What Codex writes to CODEX_HOME/shell_snapshots/<session>.<nonce>.sh once zsh has loaded .zshrc and
+// oh-my-zsh (codex-rs/shell-command/src/shell_snapshot_capture.rs: `functions`, `setopt`, `alias -L`).
+const ZSH_SNAPSHOT = [
+  '# Snapshot file',
+  '# Unset all aliases to avoid conflicts with functions',
+  'unalias -a 2>/dev/null || true',
+  '# Functions',
+  'ggf () {',
+  '\t[[ "$#" != 1 ]] && local b="$(git_current_branch)"',
+  '\tgit push --force origin "${b:=$1}"',
+  '}',
+  'git_current_branch () {',
+  '\tlocal ref',
+  '\tref=$(__git_prompt_git symbolic-ref --quiet HEAD 2> /dev/null)',
+  '\techo ${ref#refs/heads/}',
+  '}',
+  '',
+  '# setopts 2',
+  'setopt alwaystoend',
+  'setopt autocd',
+  '',
+  '# aliases 6',
+  "alias -- -='cd -'",
+  "alias -g G='| grep'",
+  "alias 'gc!'='git commit --verbose --amend'",
+  "alias grhh='git reset --hard'",
+  "alias gpf='git push --force-with-lease --force-if-includes'",
+  "alias hi='echo '\\''hi'\\'''",
+  '',
+  '# exports (native declarations)',
+  "export PAGER='less'"
+].join('\n')
+
+// bash: `declare -f` puts the brace on its own line, `alias -p` prints alias name='value'.
+const BASH_SNAPSHOT = "# Snapshot file\n# Unset all aliases to avoid conflicts with functions\nunalias -a 2>/dev/null || true\nshopt -s checkwinsize\n# Functions\nnukeall () \n{ \n    rm -rf \"$@\"\n}\n\n# setopts 1\nset -o braceexpand\n\n# aliases 1\nalias ll='ls -alF'\n"
+
+test('aliases: Codex\'s shell snapshot has what plugins add, and it wins over the profile files', () => {
+  const dir = join(codexHome, 'shell_snapshots')
+  write(dir, { 'S1.100.sh': ZSH_SNAPSHOT, 'S2.200.sh': BASH_SNAPSHOT, 'S3.tmp-300': BASH_SNAPSHOT })
+  utimesSync(join(dir, 'S1.100.sh'), new Date(2026, 0, 1), new Date(2026, 0, 1)) // older than S2
+  assert.equal(snapshotFile('S1'), join(dir, 'S1.100.sh')) // this session's, even if older
+  assert.equal(snapshotFile('nope'), join(dir, 'S2.200.sh')) // else the newest, never a half-written .tmp-
+  assert.equal(snapshotFile('S1', join(codexHome, 'missing')), null)
+
+  const home = tempDir('bcx-home-')
+  write(home, { '.zshrc': "alias grhh='git status'\n" })
+  const defs = shellAliases({ home, files: [join(home, '.zshrc')], snapshot: snapshotFile('S1') })
+  assert.equal(defs.grhh.body, 'git reset --hard') // the shell as it really starts
+  assert.equal(defs['gc!'].body, 'git commit --verbose --amend')
+  assert.equal(defs.hi.body, "echo 'hi'")
+  assert.equal(defs['-'].body, 'cd -')
+  assert.equal(defs.g, undefined)
+  assert.match(defs.ggf.body, /git push --force origin "\$\{b:=\$1\}"$/)
+  assert.equal(shellAliases({ home, files: [], snapshot: snapshotFile('S2') }).nukeall.body, 'rm -rf "$@"')
+
+  // In a hook, the guard reads the snapshot of the session it runs in.
+  const root = repo()
+  write(root, { 'src/app.js': 'changed, not committed\n' })
+  const found = command => inspect({ toolName: 'Bash', toolInput: { command }, cwd: root, session: 'S1' })
+  assert.equal(found('grhh')?.rule, 'git-discard')
+  assert.match(found('grhh').detail, /^grhh \(alias in .*S1\.100\.sh\) → git reset --hard/)
+  assert.equal(found('ggf')?.rule, 'git-history')
+  assert.equal(found('gc!'), null)
+  assert.equal(inspect({ toolName: 'Bash', toolInput: { command: 'nukeall src' }, cwd: root, session: 'S2' })?.rule, 'delete')
 })

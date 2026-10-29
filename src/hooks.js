@@ -135,7 +135,7 @@ function onPreToolUse(input, cfg, cwd) {
 
   if (cfg.guard) {
     rememberRoots(state.roots)
-    const found = safely(() => inspect({ toolName, toolInput, cwd: workdir, created: state.created, touched: state.touched, userDirty: state.userDirty }))
+    const found = safely(() => inspect({ toolName, toolInput, cwd: workdir, created: state.created, touched: state.touched, userDirty: state.userDirty, session: input.session_id }))
     const roots = knownRoots()
     if (JSON.stringify(roots) !== JSON.stringify(state.roots)) {
       state.roots = roots
@@ -236,11 +236,13 @@ function onStop(input, cfg, lang) {
   if (cfg.guard) {
     for (const p of state.guard.pending) {
       const rule = RULES[p.rule]
+      // Asked one time too many? Allowing it for good in this repo is yours to do, never Codex's.
+      const always = p.severity !== 'critical' && p.rule !== 'bcx-settings' && p.command !== 'apply_patch'
       messages.push(
         pick(
           lang,
-          `🛡 better-codex detuvo: ${rule.title.es} — \`${p.command}\`. Riesgo: ${rule.risk.es}. Responde «sí» para permitirlo una vez.`,
-          `🛡 better-codex stopped: ${rule.title.en} — \`${p.command}\`. Risk: ${rule.risk.en}. Reply "yes" to allow it once.`
+          `🛡 better-codex detuvo: ${rule.title.es} — \`${p.command}\`. Riesgo: ${rule.risk.es}. Responde «sí» para permitirlo una vez.${always ? ` Si en este repo siempre está bien: bcx allow "${p.command}"` : ''}`,
+          `🛡 better-codex stopped: ${rule.title.en} — \`${p.command}\`. Risk: ${rule.risk.en}. Reply "yes" to allow it once.${always ? ` If it is always fine in this repo: bcx allow "${p.command}"` : ''}`
         )
       )
     }

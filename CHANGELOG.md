@@ -2,7 +2,7 @@
 
 **English** · [Español](CHANGELOG.es.md)
 
-## Unreleased
+## 0.2.0 — 2026-10-28
 
 Found by testing against real Codex 0.164 (VS Code extension, Windows):
 
@@ -26,6 +26,10 @@ Found by testing against real Codex 0.164 (VS Code extension, Windows):
 - **Guard: your aliases and functions.** If your PowerShell profile, `.bashrc` or `.zshrc` (or a file they source) says `nuke` is `rm -rf`, `nuke tmp` is now checked as `rm -rf tmp`, with the alias named in the message. Codex runs PowerShell with your profile loaded, so these ran unchecked before (raised on Reddit). Profiles are read as text; `bcx doctor` lists what it found.
 - **Guard: commands that hide what they run.** `powershell -EncodedCommand`, `echo … | base64 -d | bash` and `exec(b64decode(…))` went through, even when the base64 was `rm -rf src` (raised on Reddit). Base64 is now decoded and checked like any other command. `eval "$CMD"`, `iex $script`, `sh -c "$(…)"` and other output piped into a shell ask first, because what they run is only known when they run. `sh -c "$(curl …)"` counts as running a downloaded script. Setup lines such as `eval "$(ssh-agent -s)"` don't ask. Replaying the author's last 30 days (1721 commands), this added one question.
 - **`bcx undo`**: before an action you approved runs, a copy of what it can destroy. For deletes and overwrites that means the files; for git commands it means your uncommitted work, untracked files and every branch and stash, kept as a commit under `refs/bcx/undo/` without touching your index. `git clean -fdx` copies what `git clean -n` says it would remove, ignored `.env` included. `bcx undo 1` puts it back. It never replaces a file that exists again unless you pass `--overwrite`, and it saves the state before undoing too. Codex mentions the copy when it asks, and a line confirms it. Limits: 100 MB per copy, the last 20 copies from 14 days. Measured in a real repo on OneDrive: 441 ms for a git snapshot, 32 ms to copy 26 files.
+- **`bcx allow`**: what the guard keeps asking about but is always fine in one repo (`bcx allow "rm -rf generated/"`). A folder covers what's inside it; other actions are allowed exactly as written. The stop message suggests the command. The rules live in `~/.codex/better-codex/allow.json`, outside every repo, so a cloned repo or a pull request can't grant itself anything.
+- **Guard: better-codex's own settings.** Codex running `bcx allow`, `bcx config set guard off` or `bcx uninstall`, or writing `allow.json`, `config.json` or `~/.codex/hooks.json`, now asks first. Before, Codex could switch the guard off with one command.
+- **Guard: aliases from oh-my-zsh and other plugins.** On macOS and Linux, Codex keeps a snapshot of your shell after it starts (`~/.codex/shell_snapshots/<session>.*.sh`, bash and zsh). The guard reads this session's snapshot, so `grhh`, `gpf` or `ggf` from oh-my-zsh are checked for what they run. The format was taken from Codex's source (`codex-rs/shell-command/src/shell_snapshot_capture.rs`). Names like `gc!` and values with `'\''` are read correctly too.
+- **npm**: `npx @marioaco/better-codex install`, no clone needed. Hooks and skills run from the installed copy, never from npx's cache. (`better-codex` on npm is someone else's project.)
 - **Benchmark**: `asked` also counts "Confirm that I should run…" and "Reply **approve**…", not only answers with a question mark. Recomputed for the published run: Codex asked 3/3 times in the cleanup task, not 1/3.
 - **Issue forms** in English and Spanish (bug, guard mistake, idea) that ask for the `bcx doctor` output, and a PR checklist.
 - **Docs**: README, contributing guide, security policy and changelog in English and Spanish. The README adds an animated demo of a real session (`scripts/demo-svg.mjs`), a troubleshooting section and a tip for turning off the skills of plugins you don't use.

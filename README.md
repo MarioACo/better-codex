@@ -69,11 +69,11 @@ What this shows, and what it doesn't:
 You need Node 20+ and Codex with hooks: the CLI, the VS Code extension or the desktop app.
 
 ```bash
-git clone https://github.com/MarioACo/better-codex
-cd better-codex
-node bin/bcx.js install --dry-run   # shows what would change, writes nothing
-node bin/bcx.js install
+npx @marioaco/better-codex install --dry-run   # shows what would change, writes nothing
+npx @marioaco/better-codex install
 ```
+
+Or from a clone: `git clone https://github.com/MarioACo/better-codex`, then `node bin/bcx.js install` inside it. The `better-codex` package on npm is someone else's project: use `@marioaco/better-codex`.
 
 **Then the step only you can do: trust the hooks.**
 
@@ -86,7 +86,7 @@ Codex never runs hooks you haven't trusted, and asks again if they change. The d
 Finally, check that Codex is running them:
 
 ```bash
-node bin/bcx.js doctor   # "What Codex has actually sent" should list your recent events
+npx @marioaco/better-codex doctor   # "What Codex has actually sent" should list your recent events
 ```
 
 <details>
@@ -113,7 +113,7 @@ Both include a Codex CLI, but it isn't on your `PATH`. Open it in one of these w
 - **Appends a delimited block of rules to `~/.codex/AGENTS.md`.**
 - **Registers the marketplace and installs the `bcx` plugin** (4 skills).
 
-To update: `git pull`, then `node bin/bcx.js install` again. As long as `hooks.json` doesn't change, Codex doesn't ask you to trust the hooks again. To get a `bcx` command you can run from any folder, run `npm link` in the repo.
+To update: `npx @marioaco/better-codex@latest install` (in a clone: `git pull`, then `node bin/bcx.js install`). As long as `hooks.json` doesn't change, Codex doesn't ask you to trust the hooks again. To get a `bcx` command you can run from any folder: `npm i -g @marioaco/better-codex` (in a clone: `npm link`).
 
 ## Where it works
 
@@ -176,7 +176,7 @@ The **guard** inspects every command and patch before it runs. It doesn't stop a
 - what each `npm run …` actually runs, according to your `package.json`;
 - `node -e` and `python -c` code;
 - scripts Codex wrote earlier in the session before running them;
-- your aliases and functions: if your PowerShell profile, `.bashrc` or `.zshrc` says `nuke` is `rm -rf`, `nuke tmp` is checked as `rm -rf tmp`. They are read as text, so nothing in your profile runs; aliases that plugins create on startup (oh-my-zsh, PowerShell modules) aren't seen. `bcx doctor` lists the ones it found.
+- your aliases and functions: if your PowerShell profile, `.bashrc` or `.zshrc` says `nuke` is `rm -rf`, `nuke tmp` is checked as `rm -rf tmp`. They are read as text, so nothing in your profile runs; on macOS and Linux it also reads Codex's own snapshot of your shell, so what plugins like oh-my-zsh define at startup (`grhh`, `gpf`, `ggf`…) is checked too. Aliases from PowerShell modules aren't seen. `bcx doctor` lists the ones it found.
 - base64: `powershell -EncodedCommand …`, `… | base64 -d | bash` or `b64decode` inside `python -c` is decoded and checked like any other command.
 
 It stops on:
@@ -189,6 +189,7 @@ It stops on:
 - **Infrastructure and publishing**: `terraform destroy`, `kubectl delete`, `docker compose down -v`, `npm publish`, `firebase deploy`, making a repo public…
 - **Killing programs by name**: `taskkill /IM chrome.exe`, `Stop-Process -Name node` and `pkill java` also close your own windows and servers. Killing by PID doesn't ask.
 - **Your global configuration**: `git config --global …` (your identity), `npm config set`, `setx`, user or machine environment variables.
+- **better-codex's own settings**: Codex running `bcx allow`, `bcx config set guard off` or `bcx uninstall`, or editing its settings, its allow list or `~/.codex/hooks.json`.
 - **The system**: formatting disks, the Windows registry, deleting restore points, turning off the antivirus or firewall, shutting down, `curl … | bash`.
 - **Commands only known when they run**: `eval "$CMD"`, `iex $script`, another command's output piped into `bash` or `iex`. It doesn't ask for setup lines meant to be run that way, such as `eval "$(ssh-agent -s)"` or `conda shell.powershell hook | Out-String | iex`, nor for `iex $x` inside your own scripts.
 
@@ -206,6 +207,13 @@ It stops on:
 
 Codex mentions it when it asks, and a line confirms it once saved. `bcx undo` lists the copies, and `bcx undo 1` puts the newest back. Deleted branches and dropped stashes come back too, and a branch moved by `reset --hard` goes back where it was. It never replaces a file that exists again unless you add `--overwrite`, and even then it saves the current one first. The state before undoing is saved as well, so an undo can be undone. It keeps the last 20 copies from the last 14 days. Databases, deploys and what a push already sent can't be copied; after a force push it prints the command that puts the remote branch back.
 
+**Allowed in one repo.** If the guard keeps asking about something that is always fine in a repo, run `bcx allow "rm -rf generated/"` there. The next time it stops, its message suggests the exact command.
+
+- A folder covers what's inside it; any other action is allowed only exactly as written.
+- It applies to that repo only. `bcx allow` lists what's allowed, and `bcx allow --remove 1` removes a rule.
+- Critical actions (`push --force` to main, paths outside the repo) need `--force`, or can't be allowed at all.
+- The list lives in `~/.codex/better-codex/allow.json`, outside every repo, so a repo you clone or a pull request can't grant itself anything. The guard stops Codex if it tries to change it.
+
 To see the guard at work:
 
 - `bcx guard "git reset --hard"` checks a single command;
@@ -222,6 +230,7 @@ bcx usage     # your 5-hour and weekly limits, and when they reset
 bcx audit     # replays past sessions: what the guard would have stopped, what the diet would have saved
 bcx log       # what better-codex did lately: blocks, approvals, skipped reads, verifications it asked for
 bcx undo      # the copies saved before each action you approved; bcx undo 1 restores the newest
+bcx allow     # what the guard lets through without asking in this repo; bcx allow "<command>" adds one
 bcx doctor    # install checks, what Codex itself says about the hooks (loaded, trusted), hooks run through your shells, and what Codex has actually sent
 bcx brief     # the brief Codex gets in this repo, and its token cost
 bcx try "+fix the login that crashes"   # what would be added to that prompt
@@ -312,7 +321,7 @@ plugins/bcx/      skills
 ## Uninstall
 
 ```bash
-node bin/bcx.js uninstall
+npx @marioaco/better-codex uninstall   # in a clone: node bin/bcx.js uninstall
 ```
 
 This removes the hooks, the `AGENTS.md` block, the marketplace and the installed copy, and leaves everything of yours alone. Your settings and metrics stay in `~/.codex/better-codex/` in case you come back; delete that folder if you won't.
@@ -320,7 +329,7 @@ This removes the hooks, the `AGENTS.md` block, the marketplace and the installed
 ## Development
 
 ```bash
-npm test                       # 101 tests with node:test, no dependencies
+npm test                       # 106 tests with node:test, no dependencies
 npm run check                  # tests + offline doctor
 node scripts/codex-compat.mjs  # against your real Codex binary: no login, no model calls
 node bench/run.mjs             # the benchmark (uses your Codex quota)

@@ -14,7 +14,7 @@ Revisa cada comando y parche antes de que corran, incluidos:
 - los scripts `.ps1` y `.sh`;
 - los scripts de `package.json`;
 - el código que Codex escribió antes en la sesión y luego ejecuta;
-- tus alias y funciones de la terminal (`nuke tmp` cuando `nuke` es `rm -rf`);
+- tus alias y funciones de la terminal (`nuke tmp` cuando `nuke` es `rm -rf`), y en macOS y Linux también los que crean plugins como oh-my-zsh, desde la copia de la terminal que guarda Codex;
 - el base64 que puede decodificar (`-EncodedCommand`, `base64 -d`). El texto que se arma al correr (`eval "$CMD"`, `… | bash`) pregunta antes.
 
 **No es un sandbox, y no protege contra un agente malicioso.** Analiza el texto de los comandos con heurísticas, así que un programa lo bastante indirecto puede pasar. Úsalo junto con el sandbox y las aprobaciones de Codex, no en su lugar.
@@ -25,12 +25,14 @@ Todo corre en tu máquina, y better-codex no hace llamadas de red. Guarda su est
 
 - **Estado por sesión**: el último prompt que enviaste y la última respuesta de Codex. Sirve para ligar un «sí» a la pregunta que responde, y se borra a los 7 días.
 - **Tus perfiles de terminal** (perfil de PowerShell, `.bashrc`, `.zshrc` y los archivos que cargan dentro de tu carpeta personal) se leen como texto para expandir tus alias. Nada de ellos se ejecuta ni se guarda. En Windows recuerda dónde está tu carpeta Documentos (`shell.json`).
+- **La copia de tu terminal que guarda Codex** (`~/.codex/shell_snapshots/`, macOS y Linux) se lee como texto, igual que tus perfiles, para sacar sus alias y funciones. No se guarda nada de ella.
+- **Reglas de `bcx allow`** (`allow.json`): la ruta de cada repo y las acciones que permitiste ahí. Se guardan fuera de tus repos para que un repo que clonas no pueda darse permisos, y el guard impide que Codex las cambie.
 - **Copias para `bcx undo`**: antes de una acción que aprobaste, los archivos que borraría o sobrescribiría van a `~/.codex/better-codex/undo/`, y eso puede incluir un `.env`. En comandos de git, la foto también se guarda como objetos de git en `refs/bcx/undo/` dentro de tu repo. Se quedan en tu máquina: `git push` no envía esas referencias, pero `git push --mirror` sí lo haría, y el guard pregunta antes. Solo se conservan las últimas 20 copias de los últimos 14 días. `bcx config set undo off` lo apaga.
 - **Métricas** (`events.jsonl`): no guardan prompts. Sí registran los comandos que el guard detuvo o permitió y las rutas que la dieta evitó leer, recortados a 160 caracteres. El archivo rota al llegar a 2 MB, y `BCX_NO_METRICS=1` apaga las métricas.
 
 ## Versiones con soporte
 
-Los arreglos van a la versión más reciente. Actualiza con `git pull` y `node bin/bcx.js install`.
+Los arreglos van a la versión más reciente. Actualiza con `npx @marioaco/better-codex@latest install` (en un clon: `git pull` y `node bin/bcx.js install`).
 
 ## Reportar un hueco
 

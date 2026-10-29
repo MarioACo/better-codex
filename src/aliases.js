@@ -1,16 +1,18 @@
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
-import { dataDir } from './paths.js'
+import { codexHome, dataDir } from './paths.js'
 import { enclosed, tokenize, verbOf } from './shell.js'
 import { readJson, run, toPosix, writeJson } from './util.js'
 
 // Your aliases and functions, so the guard checks what `nuke tmp` runs when your profile says
 // nuke = rm -rf. Codex runs PowerShell with your profile loaded (no -NoProfile), and bash and zsh
-// setups carry theirs. Read as text: nothing in your profile runs. Aliases that plugins create
-// while the shell starts (oh-my-zsh, PowerShell modules) are not seen.
+// setups carry theirs. Read as text: nothing in your profile runs. On bash and zsh, Codex's shell
+// snapshot also has what plugins create at startup (oh-my-zsh); PowerShell modules' aliases are not seen.
 
 const MAX_BYTES = 256 * 1024
+// A snapshot holds every function oh-my-zsh and its plugins define.
+const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024
 const MAX_FILES = 20
 const WEEK = 7 * 24 * 60 * 60 * 1000
 
@@ -45,15 +47,21 @@ const functions = (text, re) =>
     return body == null ? [] : [{ name: m[1] ?? m[2], kind: 'function', body: body.trim() }]
   })
 
+// A shell word without its quoting: 'it'\''s' → it's, "a \"b\"" → a "b".
+const unquote = word => word.replace(/'([^']*)'|"((?:[^"\\]|\\.)*)"|\\(.)/g, (m, single, double, escaped) => single ?? (double != null ? double.replace(/\\(.)/g, '$1') : escaped))
+const WORD = String.raw`(?:'[^']*'|"(?:[^"\\]|\\.)*"|\\.|[^\s'"\\=])+`
+
 // alias ll='ls -la' · alias yolo="git push --force" · nuke() { rm -rf "$1"; } · function wipe { … }
+// As zsh's alias -L prints them too: alias 'gc!'='git commit --amend', alias x='it'\''s'.
 // zsh global (-g) and suffix (-s) aliases are skipped: they are not the command word.
 function shDefinitions(text) {
   const out = []
   for (const m of text.matchAll(/^[ \t]*alias[ \t]+(.+)$/gm)) {
     if (/^-\w*[gs]/.test(m[1])) continue
-    const rest = m[1].replace(/^(-\S*\s+)+/, '')
-    for (const d of rest.matchAll(/([^\s=]+)=(?:'([^']*)'|"((?:[^"\\]|\\.)*)"|(\S+))/g)) {
-      out.push({ name: d[1], kind: 'alias', body: d[2] ?? d[3] ?? d[4] })
+    // Options before the definitions, up to `--`: alias -- -='cd -' defines `-`.
+    const rest = m[1].replace(/^(?:-[^\s=-][^\s=]*\s+)*(?:--\s+)?/, '')
+    for (const d of rest.matchAll(new RegExp(`(${WORD})=((?:${WORD}|=)*)`, 'g'))) {
+      out.push({ name: unquote(d[1]), kind: 'alias', body: unquote(d[2]) })
     }
   }
   return [...out, ...functions(text, /^[ \t]*(?:function[ \t]+([\w.:-]+)[ \t]*(?:\(\))?|([\w.:-]+)[ \t]*\(\))\s*\{/gm)]
@@ -94,9 +102,30 @@ function sourced(text, file, home) {
   return out
 }
 
+// Codex's own copy of your shell once it started, with what plugins added (oh-my-zsh included):
+// <CODEX_HOME>/shell_snapshots/<session>.<nonce>.sh, bash and zsh only, deleted when the session ends.
+// This session's when there is one, else the newest.
+export function snapshotFile(session = null, dir = join(codexHome(), 'shell_snapshots')) {
+  let names
+  try {
+    names = readdirSync(dir).filter(name => name.endsWith('.sh') && !name.includes('.tmp-'))
+  } catch {
+    return null
+  }
+  const own = session ? names.filter(name => name.startsWith(`${session}.`)) : []
+  const dated = (own.length ? own : names).map(name => {
+    try {
+      return [statSync(join(dir, name)).mtimeMs, join(dir, name)]
+    } catch {
+      return [0, join(dir, name)]
+    }
+  })
+  return dated.sort((a, b) => b[0] - a[0])[0]?.[1] ?? null
+}
+
 // name (as Codex would type it, lowercased) → { name, kind: 'alias' | 'function', body, file }.
-// The last definition wins, as in the shell.
-export function shellAliases({ home = homedir(), files = profileFiles(home) } = {}) {
+// The last definition wins, as in the shell, and Codex's snapshot comes last: it is the shell as it really starts.
+export function shellAliases({ home = homedir(), files = profileFiles(home), snapshot = snapshotFile() } = {}) {
   const found = Object.create(null)
   const queue = [...files]
   const seen = new Set()
@@ -116,6 +145,11 @@ export function shellAliases({ home = homedir(), files = profileFiles(home) } = 
     for (const def of /\.ps1$/i.test(file) ? psDefinitions(text) : shDefinitions(text)) found[verbOf(def.name)] = { ...def, file }
     queue.push(...sourced(text, file, home))
   }
+  try {
+    if (snapshot && statSync(snapshot).size <= MAX_SNAPSHOT_BYTES) {
+      for (const def of shDefinitions(readFileSync(snapshot, 'utf8'))) found[verbOf(def.name)] = { ...def, file: snapshot }
+    }
+  } catch {}
   return found
 }
 

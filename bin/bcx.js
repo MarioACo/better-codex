@@ -85,7 +85,7 @@ const commands = {
         `  1. Open Codex in a terminal:  ${open}\n  2. Type /hooks and trust the 5 from better-codex.\n  Codex never runs hooks you have not approved (and says nothing in the app or in \`codex exec\`); it asks again if they change.`
       ))
       const cli = `node "${join(appDir(), 'bin', 'bcx.js')}"`
-      console.log(dim(L(`  Luego: ${cli} doctor   (o \`npm link\` en el repo para tener \`bcx\`)`, `  Then: ${cli} doctor   (or \`npm link\` in the repo to get \`bcx\`)`)))
+      console.log(dim(L(`  Luego: ${cli} doctor   (o \`npm i -g @marioaco/better-codex\` para tener \`bcx\`)`, `  Then: ${cli} doctor   (or \`npm i -g @marioaco/better-codex\` to get \`bcx\`)`)))
     }
   },
 
@@ -325,13 +325,72 @@ const commands = {
     const { inspect, RULES, denyReason } = await import('../src/guard.js')
     const cmd = positional().join(' ')
     if (!cmd) return console.log(L('Uso: bcx guard "git push --force origin main"', 'Usage: bcx guard "git push --force origin main"'))
-    const found = inspect({ toolName: 'Bash', toolInput: { command: cmd }, cwd: resolve(option('cwd', '.')) })
+    const cwd = resolve(option('cwd', '.'))
+    const found = inspect({ toolName: 'Bash', toolInput: { command: cmd }, cwd })
+    if (!found && inspect({ toolName: 'Bash', toolInput: { command: cmd }, cwd, allow: [] })) return console.log(green(L('✓ permitido: lo permitiste en este repo (bcx allow)', '✓ allowed: you allowed it in this repo (bcx allow)')))
     if (!found) return console.log(green(L('✓ permitido: no es destructivo aquí', '✓ allowed: not destructive here')))
     const rule = RULES[found.rule]
     console.log(red(`⛔ ${L('se detiene para preguntarte', 'stops to ask you')} (${found.severity}): ${rule.title[lang]}`))
     console.log(`  ${L('qué hace', 'what it does')}: ${found.detail}`)
     console.log(`  ${L('riesgo', 'risk')}: ${rule.risk[lang]}`)
     console.log(dim(`\n${L('Lo que recibe Codex', 'What Codex receives')}:\n${denyReason(found)}`))
+  },
+
+  // bcx allow "<command>" · bcx allow (list) · bcx allow --remove <n>: per repo, in ~/.codex/better-codex/allow.json.
+  async allow() {
+    const { allowRule, canon, inspect, RULES } = await import('../src/guard.js')
+    const { allowedFor, saveAllowed } = await import('../src/allow.js')
+    const { gitRoot } = await import('../src/git.js')
+    const cwd = resolve(option('cwd', '.'))
+    const root = gitRoot(cwd)
+    if (!root) {
+      console.error(red(L('✗ bcx allow va por proyecto: corre esto dentro de un repo de git.', '✗ bcx allow is per project: run it inside a git repo.')))
+      process.exitCode = 1
+      return
+    }
+    const repo = canon(root)
+    const rules = allowedFor(repo)
+    const describe = r => `${RULES[r.rule]?.title[lang] ?? r.rule}: ${r.paths ? r.paths.map(p => `${p}/…`).join(', ') : r.detail}${dim(`  (${r.command})`)}`
+    const remove = option('remove', null)
+    if (remove !== null) {
+      const n = Number(remove)
+      if (!rules[n - 1]) {
+        console.error(red(L(`✗ No hay permiso ${remove}: bcx allow los lista.`, `✗ No permission ${remove}: bcx allow lists them.`)))
+        process.exitCode = 1
+        return
+      }
+      const [gone] = rules.splice(n - 1, 1)
+      saveAllowed(repo, rules)
+      return console.log(green(`✓ ${L('quitado', 'removed')}: ${describe(gone)}`))
+    }
+    const cmd = positional().filter(a => a !== remove).join(' ')
+    if (!cmd) {
+      if (!rules.length) return console.log(dim(L(`Nada permitido en ${root}. Agrega con: bcx allow "rm -rf generated/"`, `Nothing allowed in ${root}. Add with: bcx allow "rm -rf generated/"`)))
+      console.log(bold(L(`Permitido sin preguntar en ${root}`, `Allowed without asking in ${root}`)))
+      rules.forEach((r, i) => console.log(`  ${bold(String(i + 1).padStart(2))}  ${describe(r)}`))
+      return console.log(dim(L('\n  Quitar: bcx allow --remove 1', '\n  Remove: bcx allow --remove 1')))
+    }
+    const found = inspect({ toolName: 'Bash', toolInput: { command: cmd }, cwd, allow: [] })
+    if (!found) return console.log(green(L('✓ El guard ya lo deja pasar aquí: no hay nada que permitir.', '✓ The guard already lets it through here: nothing to allow.')))
+    const made = allowRule(found, cwd)
+    const why = {
+      settings: L('los permisos de better-codex no se pueden permitir de antemano', 'better-codex’s own settings can’t be allowed in advance'),
+      outside: L('toca rutas fuera del repo, o el repo entero', 'it touches paths outside the repo, or the whole repo')
+    }[made.error]
+    if (why) {
+      console.error(red(`✗ ${why}.`))
+      process.exitCode = 1
+      return
+    }
+    if (found.severity === 'critical' && !flag('force')) {
+      console.error(yellow(L(`! Es crítico: ${found.detail}. Si de verdad siempre está bien aquí: bcx allow "${cmd}" --force`, `! It's critical: ${found.detail}. If it really is always fine here: bcx allow "${cmd}" --force`)))
+      process.exitCode = 1
+      return
+    }
+    const rule = { ...made.rule, command: cmd.slice(0, 160), at: Date.now() }
+    saveAllowed(repo, [...rules.filter(r => !(r.rule === rule.rule && JSON.stringify(r.paths ?? r.detail) === JSON.stringify(rule.paths ?? rule.detail))), rule])
+    console.log(green(`✓ ${L('permitido en', 'allowed in')} ${root}: ${describe(rule)}`))
+    console.log(dim(L('  Solo en este repo. Codex no puede cambiar esta lista: el guard lo detiene si lo intenta.', '  Only in this repo. Codex can’t change this list: the guard stops it if it tries.')))
   },
 
   async config() {
@@ -370,7 +429,8 @@ const commands = {
   bcx brief [carpeta]          ${L('el resumen del repo que recibe Codex', 'the repo brief Codex receives')}
   bcx try "<prompt>"           ${L('lo que se agregaría a ese prompt', 'what would be added to that prompt')}
   bcx guard "<comando>"        ${L('si el guard lo detendría y por qué', 'whether the guard would stop it, and why')}
-  bcx undo [n] [--overwrite]   ${L('las copias guardadas antes de cada acción que aprobaste, y restaurarlas', 'the copies saved before each action you approved, and restoring them')}
+  bcx allow ["<comando>"]      ${L('lo que el guard deja pasar sin preguntar en este repo', 'what the guard lets through without asking in this repo')}
+  bcx undo [n] [--overwrite]${L('las copias guardadas antes de cada acción que aprobaste, y restaurarlas', 'the copies saved before each action you approved, and restoring them')}
   bcx config [set k v|reset]   ${L('ajustes', 'settings')}
   bcx uninstall                ${L('quita todo lo instalado', 'removes everything installed')}
 
