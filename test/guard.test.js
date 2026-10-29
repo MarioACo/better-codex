@@ -359,3 +359,60 @@ test('Codex-only changes are recognized through a symlinked path (macOS /var, Wi
   // and the user's own change is still protected through the link
   assert.equal(rule('git checkout -- src/app.js', link), 'git-discard')
 })
+
+test('strict mode: only known read-only commands, tests and builds go through; anything else asks', () => {
+  const root = repo()
+  const strict = command => inspect({ toolName: 'Bash', toolInput: { command }, cwd: root, strict: true, aliases: { ll: { kind: 'alias', body: 'ls -la', file: '~/.bashrc' } } })
+  for (const command of [
+    'git status',
+    'git log --oneline -5 | head -3',
+    'git branch -a',
+    'rg -n TODO src | head -20',
+    'Get-ChildItem -Recurse src | Select-String TODO | Sort-Object Path',
+    'cd src && ls',
+    'npm.cmd test',
+    'npm run build',
+    'npx tsc --noEmit',
+    'node --check src/app.js',
+    'docker compose config -q',
+    'gh pr view 32 --json url,state',
+    'gh api repos/acme/app/pulls',
+    'node --version',
+    'll',
+    "$ErrorActionPreference='Stop'",
+    '$files = Get-ChildItem src -Filter *.js',
+    "'{0,4}: {1}' -f $n, $_",
+    'function Show-Lines($path) { Get-Content $path }\nShow-Lines README.md',
+    'Sort-Object Length\n-Descending',
+    "[IO.Path]::GetFileName('a/b.txt')",
+    'Add-Type -AssemblyName System.Drawing',
+    'New-Item -ItemType Directory -Path out -Force'
+  ]) {
+    assert.equal(strict(command), null, command)
+  }
+  for (const [command, key] of [
+    ['git commit -m "wip"', 'git commit'],
+    ['git add -A', 'git add'],
+    ['git branch feature', 'git branch'],
+    ['npm install lodash', 'npm install'],
+    ['node -e "console.log(1)"', 'node -e'],
+    ['curl https://example.com', 'curl'],
+    ['echo hi > out.txt', 'echo'],
+    ["sed -i 's/a/b/' x.txt", 'sed'],
+    ['gh pr create --fill', 'gh'],
+    ['gh api -X POST repos/acme/app/issues -f title=x', 'gh'],
+    ["[IO.File]::WriteAllText('x', 'y')", "[IO.File]::WriteAllText('x',"],
+    ['$img.Save("out.png")', '$img.Save("out.png")'],
+    ['Start-Process notepad', 'Start-Process']
+  ]) {
+    const found = strict(command)
+    assert.equal(found?.rule, 'strict', command)
+    assert.ok(found.detail.startsWith(`\`${key}`), `${command}: ${found.detail}`)
+  }
+  // a real risk in the same command says more than "not on the list"
+  assert.equal(strict('git add -A; rm -rf src')?.rule, 'delete')
+  // off by default
+  assert.equal(rule('git commit -m "wip"', root), null)
+  // Codex can't switch it off
+  assert.equal(rule('bcx config set strict off', root), 'bcx-settings')
+})

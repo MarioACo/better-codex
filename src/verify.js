@@ -47,7 +47,7 @@ const ACKNOWLEDGED = /(?<![\p{L}])(fail\p{L}*|fall[aeoó]\p{L}*|error\p{L}*|no p
 const union = (list, items, max) => [...new Set([...list, ...items])].slice(-max)
 
 // On Windows Codex often calls npm.cmd (PowerShell blocks npm.ps1) or node.exe: same command.
-const withoutExt = command => command.replace(/\b(npm|pnpm|yarn|bun|npx|pnpx|bunx|ng|node|deno|python3?|py|tsc|eslint|vitest|jest)\.(cmd|ps1|exe|bat)\b/gi, '$1')
+export const withoutExt = command => command.replace(/\b(npm|pnpm|yarn|bun|npx|pnpx|bunx|ng|node|deno|python3?|py|tsc|eslint|vitest|jest)\.(cmd|ps1|exe|bat)\b/gi, '$1')
 
 // PostToolUse: remembers what the turn edited, whether a check ran after the last edit, and if it failed.
 export function trackTool(state, { toolName, toolInput, cwd, verifyCmd, output }) {

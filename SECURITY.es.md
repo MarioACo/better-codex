@@ -17,7 +17,7 @@ Revisa cada comando y parche antes de que corran, incluidos:
 - tus alias y funciones de la terminal (`nuke tmp` cuando `nuke` es `rm -rf`), y en macOS y Linux también los que crean plugins como oh-my-zsh, desde la copia de la terminal que guarda Codex;
 - el base64 que puede decodificar (`-EncodedCommand`, `base64 -d`). El texto que se arma al correr (`eval "$CMD"`, `… | bash`) pregunta antes.
 
-**No es un sandbox, y no protege contra un agente malicioso.** Analiza el texto de los comandos con heurísticas, así que un programa lo bastante indirecto puede pasar. Úsalo junto con el sandbox y las aprobaciones de Codex, no en su lugar.
+**No es un sandbox, y no protege contra un agente malicioso.** Analiza el texto de los comandos con heurísticas, así que un programa lo bastante indirecto puede pasar. Úsalo junto con el sandbox y las aprobaciones de Codex, no en su lugar. El modo estricto (`bcx config set strict on`) falla del lado seguro: lo que no reconoce, pregunta. Aun así lee el texto de los comandos, así que tampoco sustituye al sandbox.
 
 ## Tus datos
 

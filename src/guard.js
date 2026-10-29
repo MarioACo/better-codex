@@ -5,9 +5,11 @@ import { expand, shellAliases, snapshotFile, tilde } from './aliases.js'
 import { allowedFor, allowFile } from './allow.js'
 import { configPath } from './config.js'
 import { gitRoot } from './git.js'
+import { KINDS } from './infra.js'
 import { codexHome } from './paths.js'
 import { enclosed, pathArgs, patchFiles, segments, shellWrites, toolCommands, verbOf } from './shell.js'
 import { clip, readJson, readText, run, toPosix } from './util.js'
+import { VERIFY, withoutExt } from './verify.js'
 
 // What each rule protects, in the words shown to you (es/en) and to the model (en).
 export const RULES = {
@@ -122,6 +124,14 @@ export const RULES = {
       en: 'Codex could grant itself permission or switch the protection off'
     },
     safer: 'give the user the exact bcx command and let them run it'
+  },
+  strict: {
+    title: { es: 'Comando fuera de la lista segura (modo estricto)', en: 'Command outside the safe list (strict mode)' },
+    risk: {
+      es: 'en modo estricto solo pasan sin preguntar los comandos de solo lectura, las pruebas y los builds conocidos',
+      en: 'in strict mode only known read-only commands, tests and builds run without asking'
+    },
+    safer: 'use a read-only command or a known check if that is enough; otherwise ask'
   }
 }
 
@@ -605,7 +615,7 @@ function bcxArgs(seg) {
 function checkSettings(seg, ctx) {
   const args = bcxArgs(seg)
   const off = /^(false|off|no|n|0)$/i
-  const changes = args && ((args[0] === 'allow' && args.length > 1) || (args[0] === 'config' && args[1] === 'set' && /^(guard|undo)$/.test(args[2]) && off.test(args[3] ?? '')) || (args[0] === 'uninstall' && !args.includes('--dry-run')))
+  const changes = args && ((args[0] === 'allow' && args.length > 1) || (args[0] === 'config' && args[1] === 'set' && /^(guard|undo|strict)$/.test(args[2]) && off.test(args[3] ?? '')) || (args[0] === 'uninstall' && !args.includes('--dry-run')))
   if (changes) return { rule: 'bcx-settings', severity: 'critical', detail: `${seg.text} changes what better-codex lets Codex do` }
   const written = [...shellWrites(seg.text), ...(COPY_VERBS.has(seg.verb) ? pathArgs(seg.argv).slice(-1) : []), ...(DELETE_VERBS.has(seg.verb) ? pathArgs(seg.argv) : [])]
   const file = written.find(p => isSettings(p, ctx))
@@ -855,7 +865,8 @@ function inspectCommand(command, ctx, depth) {
     checkDecoded(command, ctx, depth) ||
     checkRunsOutput(command, ctx, depth)
   if (whole && !ctx.allowed(whole)) return whole
-  for (const seg of segments(command)) {
+  const segs = segments(command)
+  for (const seg of segs) {
     const found =
       checkDelete(seg, ctx) ||
       checkGit(seg, ctx) ||
@@ -873,12 +884,118 @@ function inspectCommand(command, ctx, depth) {
     // What Codex ran is the outer command; the detail tells what it leads to.
     if (found && !ctx.allowed(found)) return { ...found, command: seg.text.slice(0, 300), targets: pathArgs(seg.argv) }
   }
+  // Strict mode last: a real risk anywhere in the command says more than "not on the list".
+  // Functions the command itself defines are as safe as their bodies, which are checked here too.
+  const defined = new Set(segs.map(seg => /^(?:function|filter)\s+([\w-]+)/i.exec(seg.raw ?? '')?.[1]?.toLowerCase()).filter(Boolean))
+  for (const seg of segs) {
+    if (defined.has(seg.verb)) continue
+    const found = checkStrict(seg, ctx, depth)
+    if (found && !ctx.allowed(found)) return { ...found, command: seg.text.slice(0, 300), targets: pathArgs(seg.argv) }
+  }
   return null
 }
 
-// The first risky thing a tool call would do, or null.
-export function inspect({ toolName, toolInput, cwd, created = [], touched = [], userDirty = [], aliases, allow, session }) {
+// Strict mode (bcx config set strict on): instead of looking for what is dangerous, only what is known
+// to be safe runs without asking. Read-only commands, git and gh queries, tests, builds, linters and infra
+// checks; anything else, including what this list doesn't recognize, asks. Only what Codex typed: your own
+// scripts and package.json scripts are judged by the usual rules.
+const SAFE_VERBS = new Set([
+  ...'ls dir gci get-childitem tree cat type gc get-content head tail less more bat rg grep egrep fgrep select-string sls findstr fd wc sort uniq cut tr diff cmp comm file stat du df which where where.exe get-command gcm get-item gi get-itemproperty test-path resolve-path split-path join-path convert-path pwd get-location gl cd set-location sl pushd popd echo printf write-output write-host write-verbose write-error out-null out-string out-host select-object select where-object ? foreach-object % sort-object group-object measure-object format-table ft format-list fl convertfrom-json convertto-json get-date date whoami hostname uname get-process ps get-service sleep start-sleep true exit jq yq sed find basename dirname realpath readlink nl column tac rev od hexdump strings md5sum sha256sum get-filehash get-ciminstance get-wmiobject mkdir md'.split(' '),
+  // PowerShell's own words, so a script's structure is not a command
+  ...'if elseif else foreach for while do try catch finally switch return break continue param begin process end throw function filter'.split(' ')
+])
+// Read-only git, by subcommand; branch, tag, remote, stash and config only when they list or read.
+const SAFE_GIT = /^(status|log|diff|show|blame|ls-files|ls-tree|rev-parse|rev-list|describe|grep|shortlog|cat-file|merge-base|name-rev|whatchanged|fetch|version|help|count-objects|for-each-ref|show-ref|check-ignore)$/
+function gitReads(argv) {
+  const { sub, rest } = gitArgs(argv)
+  const named = rest.filter(a => !a.startsWith('-'))
+  if (SAFE_GIT.test(sub)) return true
+  if (sub === 'branch') return (!named.length || rest.some(a => /^(-l|--list)$/.test(a))) && !rest.some(a => /^-[dDmMcCf]$|^--(delete|move|copy|force|set-upstream|unset-upstream|edit-description)/.test(a))
+  if (sub === 'tag') return !named.length || rest.some(a => /^(-l|--list)$/.test(a))
+  if (sub === 'remote') return !named.length || /^(show|get-url)$/.test(named[0])
+  if (sub === 'stash') return /^(list|show)$/.test(named[0] || '')
+  if (sub === 'config') return rest.some(a => /^(--get|--get-all|--get-regexp|--list|-l)$/.test(a))
+  if (/^(worktree|submodule|reflog)$/.test(sub)) return !named.length || /^(list|status|show)$/.test(named[0])
+  return false
+}
+// gh that only reads: list, view, status, checks, diff, and api calls that are plain GETs.
+function ghReads(argv) {
+  const [group, action] = argv.slice(1).filter(a => !a.startsWith('-'))
+  if (group === 'api') return !argv.some((a, i) => (/^(-X|--method)$/.test(a) && !/^GET$/i.test(argv[i + 1] || '')) || /^(-f|-F|--field|--raw-field|--input)$/.test(a))
+  if (/^(auth|search|status)$/.test(group)) return group !== 'auth' || action === 'status'
+  return /^(issue|pr|run|release|repo|workflow|gist|label|cache|secret|variable)$/.test(group) && /^(list|view|status|checks|diff|ls)$/.test(action || '') && group !== 'secret'
+}
+const VERSION_OR_HELP = /^\S+\s+(--version|-v|-V|version|--help|-h|help)\s*$/i
+const PACKAGE_READS = /^(npm|pnpm|yarn|bun)(\.cmd)?\s+(ls|list|view|info|outdated|why|explain|run|config\s+get|help)(\s+--?[\w-]+)*\s*$|^(npm|pnpm|yarn)(\.cmd)?\s+audit(?![\s\S]*\bfix\b)|^pip3?\s+(list|show|freeze)\b|^npx\s+prettier\b[\s\S]*--check\b|^nvm\s+(list|ls|current|version)\b|^winget\s+(list|show|search)\b/i
+// Syntax checks and builds the shared VERIFY list doesn't name.
+const CHECKS = /^(node|deno|bun)\s+--check\s|^\.?[\\/]?gradlew?(\.bat)?\s+\S*(compile|build|assemble|test|lint|check)\w*/i
+// What an expression does: printing a value is fine; calling something that changes things is not.
+const CHANGES = /\.(Delete|Write\w*|Remove\w*|Move\w*|Copy\w*|Create\w*|Kill|Stop|Start|Invoke\w*|Save\w*|Append\w*|Clear|Set\w*|Execute\w*|Send\w*|Upload\w*|Download\w*)\s*\(/i
+// [Type]::Member reads: [IO.Path]::GetFileName, [IO.File]::ReadAllText, [System.Drawing.Image]::FromFile…
+const STATIC_READ = /^\[[\w.]+\]::(Get\w*|Read\w*|Exists|Parse|TryParse|From\w*|To\w*|Is\w*|Combine|Join|Format|Equals|Compare|Max|Min|Abs|Round|Floor|Ceiling|Sqrt|Pow|Now|UtcNow|Today|NewLine|Empty|Escape|Unescape|NetworkToHostOrder|HostToNetworkOrder|Matches|Match|IsMatch|Split|DirectorySeparatorChar|PathSeparator)\b/i
+const KEYWORD_CALL = /^(if|elseif|foreach|for|while|switch|catch|function|filter)\s*\(/i
+
+// Does this expression only compute and print? Quotes, variables, numbers, arrays, casts, format strings.
+const expressionReads = raw => /^([$"'@(\d-]|\[[\w.]+\]\s*[@$("'\d])/.test(raw) && !CHANGES.test(raw) && !/\[[\w.]+\]::(?!\w+\b)/.test(raw) && ![...raw.matchAll(/\[[\w.]+\]::\w+/g)].some(m => !STATIC_READ.test(m[0]))
+
+function strictSafe(seg, ctx, depth = 0) {
+  if (depth > 3) return false
+  const raw = (seg.raw ?? seg.text).trim()
+  if (!raw || /^[)}\]]+$/.test(raw)) return true
+  // A line of flags only continues the command before it (Sort-Object Length ⏎ -Descending).
+  if (seg.argv.every(a => /^-[A-Za-z][\w-]*$/.test(a))) return true
+  if (/^new-item\b/i.test(raw) && /-ItemType\s+["']?Directory/i.test(raw)) return true
+  if (shellWrites(raw).some(p => !/^(\$null|nul|\/dev\/null|&\d)$/i.test(p))) return false
+  // $x = …: what is assigned decides. A string, number or expression only computes; a command must be safe.
+  const assign = /^\$[\w:]+(\.\w+)*\s*[+-]?=\s*([\s\S]*)$/.exec(raw)
+  if (assign) return !assign[2] || expressionReads(assign[2]) || segments(assign[2]).every(s => strictSafe(s, ctx, depth + 1))
+  if (KEYWORD_CALL.test(raw)) return !CHANGES.test(raw)
+  if (/^\[[\w.]+\]::/.test(raw)) return STATIC_READ.test(raw) && !CHANGES.test(raw)
+  if (/^([$"'@(\d]|\[[\w.]+\]\s*[@$("'\d])/.test(raw)) return expressionReads(raw)
+  const verb = seg.verb
+  if (verb === 'git') return gitReads(seg.argv)
+  if (verb === 'gh') return ghReads(seg.argv)
+  if (verb === 'add-type') return seg.argv.some(a => /^-AssemblyName$/i.test(a)) && !seg.argv.some(a => /^-(TypeDefinition|MemberDefinition|Path|LiteralPath)$/i.test(a))
+  if (SAFE_VERBS.has(verb)) {
+    if (verb === 'sed' || verb === 'yq') return !seg.argv.some(a => /^-[a-z]*i/.test(a))
+    if (verb === 'find') return !seg.argv.some(a => /^-(delete|exec|execdir|ok|fprint\w*|fls)$/.test(a))
+    if (verb === 'sort') return !seg.argv.some(a => /^-o$|^--output/.test(a))
+    return !CHANGES.test(raw)
+  }
+  const plain = withoutExt(seg.text)
+  if (VERSION_OR_HELP.test(plain) || PACKAGE_READS.test(plain) || CHECKS.test(plain) || VERIFY.test(plain) || KINDS.some(k => k.ran.test(plain))) return true
+  // An alias is as safe as what it expands to (ll = ls -la).
+  const def = ctx.alias(verb)
+  if (def && !ctx.expanding.has(verb)) {
+    ctx.expanding.add(verb)
+    try {
+      return segments(expand(def, seg.argv.slice(1))).every(s => strictSafe(s, ctx, depth + 1))
+    } finally {
+      ctx.expanding.delete(verb)
+    }
+  }
+  return false
+}
+
+// git commit, npm install, node script.js: the command and its subcommand, so a yes or `bcx allow`
+// covers that kind of command, whatever its arguments.
+const MULTIPLEXERS = /^(git|npm|pnpm|yarn|bun|npx|pnpx|bunx|docker|kubectl|helm|gh|cargo|go|dotnet|terraform|tofu|aws|az|gcloud|pip|pip3|python|python3|py|node|deno|make|mvn|gradle|gradlew)$/
+const commandKey = seg => {
+  const verb = seg.argv[0]
+  if (!MULTIPLEXERS.test(seg.verb)) return verb
+  const sub = seg.verb === 'git' ? gitArgs(seg.argv).sub : seg.argv[1]
+  return sub ? `${verb} ${sub}` : verb
+}
+
+function checkStrict(seg, ctx, depth) {
+  if (!ctx.strict || depth > 0 || ctx.reading || strictSafe(seg, ctx)) return null
+  return { rule: 'strict', severity: 'high', detail: `\`${commandKey(seg)}\` isn't on the strict-mode list (read-only commands, tests, builds)`, save: { git: ctx.cwd } }
+}
+
+// The first risky thing a tool call would do, or null. strict: only known-safe commands go through.
+export function inspect({ toolName, toolInput, cwd, created = [], touched = [], userDirty = [], aliases, allow, session, strict = false }) {
   const ctx = context({ cwd, created, touched, userDirty, aliases, allow, session })
+  ctx.strict = strict
   if (/apply_patch|edit|write/i.test(toolName || '') || patchFiles(toolInput).length) {
     const found = checkPatch(toolInput, ctx)
     if (found && !ctx.allowed(found)) return { ...found, command: 'apply_patch', targets: patchFiles(toolInput).map(f => f.path) }
@@ -921,7 +1038,8 @@ const ASKS = {
   hidden: /escond|ocult|codific|base64|eval|iex|invoke-expression|ejecut|corr|\brun\b|hidden|encod|decod/iu,
   kill: /cerr|termin|\bmat|kill|stop|deten|proces|taskkill/iu,
   'global-config': /global|config|identidad|identity|registr|variable|entorno|environment|setx|npmrc/iu,
-  'bcx-settings': /bcx|better-codex|permis|allow|config|guard|hooks/iu
+  'bcx-settings': /bcx|better-codex|permis|allow|config|guard|hooks/iu,
+  strict: /ejecut|corr|comando|permit|instal|run|command|allow|install/iu
 }
 
 const words = text =>

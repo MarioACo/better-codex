@@ -5,6 +5,7 @@ import { readJson, writeJson } from './util.js'
 export const DEFAULTS = Object.freeze({
   lang: 'auto', // 'auto' | 'es' | 'en': messages shown to you, not to the model
   guard: true, // PreToolUse: destructive or hard-to-undo actions wait for your explicit yes
+  strict: false, // PreToolUse: only known read-only commands, tests and builds run without asking; the rest asks
   undo: true, // PreToolUse: a copy of what an action you approved can destroy, before it runs (bcx undo)
   brief: true, // SessionStart: a compact map of the repo, so Codex skips the first exploration
   boost: true, // UserPromptSubmit: prompt modes (+, quick:, ask:, plan:) and task playbooks

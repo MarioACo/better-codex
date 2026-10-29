@@ -210,6 +210,8 @@ It stops on:
 
 Codex mentions it when it asks, and a line confirms it once saved. `bcx undo` lists the copies, and `bcx undo 1` puts the newest back. Deleted branches and dropped stashes come back too, and a branch moved by `reset --hard` goes back where it was. It never replaces a file that exists again unless you add `--overwrite`, and even then it saves the current one first. The state before undoing is saved as well, so an undo can be undone. It keeps the last 20 copies from the last 14 days. Databases, deploys and what a push already sent can't be copied; after a force push it prints the command that puts the remote branch back.
 
+**Strict mode.** The guard looks for what is dangerous, so something it doesn't recognize goes through. `bcx config set strict on` turns that around: only what is known to be safe runs without asking, which means read-only commands, git and gh queries, tests, builds, linters and infra checks. Anything else asks, including whatever the list doesn't recognize: `git commit`, `npm install`, `node -e`, `curl`, writing files from the shell, running a program. Real risks still come first, so `git add; rm -rf src` is reported as a delete. Expect many more questions. Replaying the author's last 30 days, it would have asked on 24% of commands, against 2% without it. `bcx audit --strict` shows what it would ask in your sessions, grouped by command, and `bcx allow "git commit"` lets one kind of command through in one repo, whatever its arguments.
+
 **Allowed in one repo.** If the guard keeps asking about something that is always fine in a repo, run `bcx allow "rm -rf generated/"` there. The next time it stops, its message suggests the exact command.
 
 - A folder covers what's inside it; any other action is allowed only exactly as written.
@@ -230,7 +232,7 @@ The guard is an extra layer, not a replacement for Codex's sandbox and approvals
 ```bash
 bcx stats     # tokens, cache, average/peak context, tools per turn, share spent polling, heaviest sessions, before/after install
 bcx usage     # your 5-hour and weekly limits, and when they reset
-bcx audit     # replays past sessions: what the guard would have stopped, what the diet would have saved
+bcx audit     # replays past sessions: what the guard would have stopped, what the diet would have saved (--strict: with strict mode on)
 bcx log       # what better-codex did lately: blocks, approvals, skipped reads, verifications it asked for
 bcx undo      # the copies saved before each action you approved; bcx undo 1 restores the newest
 bcx allow     # what the guard lets through without asking in this repo; bcx allow "<command>" adds one
@@ -267,6 +269,7 @@ bcx config reset
 | --- | --- | --- |
 | `guard` | `true` | Asking before destructive actions |
 | `undo` | `true` | A copy of what an approved action can destroy, before it runs (`bcx undo`) |
+| `strict` | `false` | Only known read-only commands, tests and builds run without asking; everything else asks |
 | `brief` | `true` | Repo brief at session start |
 | `boost` / `hints` | `true` | Modes and playbooks per prompt / suggested paths |
 | `diet` / `dietMaxKB` | `true` / `200` | Wasteful reads / largest full read |
@@ -332,7 +335,7 @@ This removes the hooks, the `AGENTS.md` block, the marketplace and the installed
 ## Development
 
 ```bash
-npm test                       # 111 tests with node:test, no dependencies
+npm test                       # 113 tests with node:test, no dependencies
 npm run check                  # tests + offline doctor
 node scripts/codex-compat.mjs  # against your real Codex binary: no login, no model calls
 node bench/run.mjs             # the benchmark (uses your Codex quota)

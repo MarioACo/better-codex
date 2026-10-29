@@ -14,6 +14,7 @@ Infraestructura, bases de datos y DevOps:
 - **Skills**: `$bcx:ci` arregla un pipeline que falla desde el log del paso que falló; `$bcx:migrate` cambia un schema con una migración nueva y reversible probada en local.
 - **Imágenes**: las reglas le piden a Codex ver las imágenes con el detalle por defecto, una o dos a la vez. En los últimos 30 días del autor, las 60 salidas más grandes de herramientas fueron todas imágenes vistas con `detail: "original"`.
 - **Benchmark**: dos tareas nuevas, una migración sobre una tabla con datos y un Dockerfile de producción.
+- **Modo estricto** (`bcx config set strict on`, lo señalaron en Reddit: «la seguridad no debería ser solo heurística»). Solo pasan sin preguntar los comandos de solo lectura, las consultas de git y gh, las pruebas, los builds, los linters y las verificaciones de infraestructura conocidos; todo lo demás pregunta, también lo que la lista no reconoce. Los riesgos reales se siguen reportando primero. `bcx audit --strict` muestra qué preguntaría, agrupado por comando; `bcx allow "git commit"` deja pasar un tipo de comando en un repo. En los últimos 30 días del autor: preguntaría en el 24% de los comandos, contra el 2% sin él. Apagado por defecto, y Codex no lo puede apagar.
 
 ## 0.2.0 — 2026-10-29
 

@@ -89,3 +89,13 @@ test('allow: the stop message offers it, and bcx allow lists, adds and removes',
   assert.match(bcx(['allow', '--remove', '1'], root).stdout, /removed/)
   assert.deepEqual(allowedFor(canon(root)), [])
 })
+
+test('allow: in strict mode, allowing a kind of command covers it whatever its arguments, in that repo', () => {
+  const root = repo()
+  const strict = (command, allow) => inspect({ toolName: 'Bash', toolInput: { command }, cwd: root, strict: true, allow })
+  const found = strict('git commit -m "first"', [])
+  const made = allowRule(found, root)
+  assert.deepEqual(made.rule, { rule: 'strict', detail: "`git commit` isn't on the strict-mode list (read-only commands, tests, builds)" })
+  assert.equal(strict('git commit -am "second, other flags"', [made.rule]), null)
+  assert.equal(strict('git push', [made.rule])?.rule, 'strict') // only that kind
+})

@@ -39,8 +39,10 @@ export function toolCalls(text) {
 }
 
 // Replays past tool calls through the guard and the diet. Nothing is executed; git checks see today's repos.
-export function audit(days = 30, { limit = 5000 } = {}) {
-  const report = { sessions: 0, calls: 0, guard: {}, diet: {}, savedTokens: 0 }
+// strict: replays with strict mode on, to see how often it would ask.
+export function audit(days = 30, { limit = 5000, strict = false } = {}) {
+  // strict: which commands strict mode would ask about, by command and subcommand (git commit, node -e).
+  const report = { sessions: 0, calls: 0, guard: {}, diet: {}, savedTokens: 0, strict: {} }
   const add = (bucket, key, example) => {
     const entry = (bucket[key] ??= { count: 0, examples: [] })
     entry.count++
@@ -52,9 +54,10 @@ export function audit(days = 30, { limit = 5000 } = {}) {
       if (report.calls >= limit) return report
       report.calls++
       const cwd = call.cwd || process.cwd()
-      const found = inspect({ ...call, cwd })
+      const found = inspect({ ...call, cwd, strict })
       if (found) {
         add(report.guard, found.rule, found.command.slice(0, 140))
+        if (found.rule === 'strict') add(report.strict, /`([^`]+)`/.exec(found.detail)?.[1] ?? found.command, found.command.slice(0, 140))
         continue
       }
       const diet = dietCheck({ ...call, cwd })

@@ -126,7 +126,8 @@ export function segments(command) {
         continue
       }
     }
-    out.push({ text: argv.join(' '), argv, verb, piped: sep === '|', fed, source: fed ? out[out.length - 1] ?? null : null })
+    // raw keeps the quotes that argv drops: '{0}' -f $x is an expression, not a command named {0}.
+    out.push({ text: argv.join(' '), raw: text, argv, verb, piped: sep === '|', fed, source: fed ? out[out.length - 1] ?? null : null })
   }
   return out
 }

@@ -285,13 +285,19 @@ const commands = {
     const { RULES } = await import('../src/guard.js')
     const days = Number(option('days', 30))
     console.log(dim(L('Repasando tus sesiones (no se ejecuta nada)…', 'Replaying your sessions (nothing is executed)…')))
-    const report = audit(days)
+    const report = audit(days, { strict: flag('strict') })
     console.log(bold(L(`Auditoría · ${report.calls} llamadas en ${report.sessions} sesiones (${days} días)`, `Audit · ${report.calls} calls in ${report.sessions} sessions (${days} days)`)))
     const guardTotal = Object.values(report.guard).reduce((n, e) => n + e.count, 0)
     console.log(`\n${bold(L('El guard te habría preguntado', 'The guard would have asked you'))} ${guardTotal}× ${dim(`(${report.calls ? ((guardTotal / report.calls) * 100).toFixed(1) : 0}%)`)}`)
     for (const [rule, entry] of Object.entries(report.guard).sort((a, b) => b[1].count - a[1].count)) {
       console.log(`  ${String(entry.count).padStart(4)}  ${RULES[rule].title[lang]}`)
       for (const example of entry.examples) console.log(dim(`        ${example}`))
+    }
+    const strictKeys = Object.entries(report.strict).sort((a, b) => b[1].count - a[1].count)
+    if (strictKeys.length) {
+      console.log(`\n${bold(L('Lo que más preguntaría el modo estricto', 'What strict mode would ask about most'))}`)
+      for (const [key, entry] of strictKeys.slice(0, 12)) console.log(`  ${String(entry.count).padStart(4)}  ${key.slice(0, 70)}`)
+      console.log(dim(L('  Lo que siempre está bien en un repo: bcx allow "<comando>" dentro de ese repo.', '  What is always fine in a repo: bcx allow "<command>" inside that repo.')))
     }
     const dietTotal = Object.values(report.diet).reduce((n, e) => n + e.count, 0)
     console.log(`\n${bold(L('La dieta habría evitado', 'The diet would have skipped'))} ${dietTotal} ${L('lecturas', 'reads')}${report.savedTokens ? dim(` (≈ ${humanNumber(report.savedTokens)} tokens)`) : ''}`)
@@ -326,8 +332,8 @@ const commands = {
     const cmd = positional().join(' ')
     if (!cmd) return console.log(L('Uso: bcx guard "git push --force origin main"', 'Usage: bcx guard "git push --force origin main"'))
     const cwd = resolve(option('cwd', '.'))
-    const found = inspect({ toolName: 'Bash', toolInput: { command: cmd }, cwd })
-    if (!found && inspect({ toolName: 'Bash', toolInput: { command: cmd }, cwd, allow: [] })) return console.log(green(L('✓ permitido: lo permitiste en este repo (bcx allow)', '✓ allowed: you allowed it in this repo (bcx allow)')))
+    const found = inspect({ toolName: 'Bash', toolInput: { command: cmd }, cwd, strict: cfg.strict })
+    if (!found && inspect({ toolName: 'Bash', toolInput: { command: cmd }, cwd, allow: [], strict: cfg.strict })) return console.log(green(L('✓ permitido: lo permitiste en este repo (bcx allow)', '✓ allowed: you allowed it in this repo (bcx allow)')))
     if (!found) return console.log(green(L('✓ permitido: no es destructivo aquí', '✓ allowed: not destructive here')))
     const rule = RULES[found.rule]
     console.log(red(`⛔ ${L('se detiene para preguntarte', 'stops to ask you')} (${found.severity}): ${rule.title[lang]}`))
@@ -370,7 +376,7 @@ const commands = {
       rules.forEach((r, i) => console.log(`  ${bold(String(i + 1).padStart(2))}  ${describe(r)}`))
       return console.log(dim(L('\n  Quitar: bcx allow --remove 1', '\n  Remove: bcx allow --remove 1')))
     }
-    const found = inspect({ toolName: 'Bash', toolInput: { command: cmd }, cwd, allow: [] })
+    const found = inspect({ toolName: 'Bash', toolInput: { command: cmd }, cwd, allow: [], strict: cfg.strict })
     if (!found) return console.log(green(L('✓ El guard ya lo deja pasar aquí: no hay nada que permitir.', '✓ The guard already lets it through here: nothing to allow.')))
     const made = allowRule(found, cwd)
     const why = {
@@ -424,13 +430,13 @@ const commands = {
   bcx doctor                   ${L('revisa todo y ejecuta los hooks de prueba', 'checks everything and test-runs the hooks')}
   bcx stats [--days 30]        ${L('tokens, contexto y herramientas por sesión; antes/después', 'tokens, context and tool calls per session; before/after')}
   bcx usage                    ${L('límites de 5 h y semanal', '5-hour and weekly limits')}
-  bcx audit [--days 30]        ${L('qué habrían detenido guard y dieta en tus sesiones', 'what guard and diet would have stopped in your sessions')}
+  bcx audit [--days|--strict]  ${L('qué habrían detenido guard y dieta en tus sesiones', 'what guard and diet would have stopped in your sessions')}
   bcx log [--n 20]             ${L('lo último que hizo better-codex (bloqueos, aprobaciones, ahorros)', 'what better-codex did lately (blocks, approvals, savings)')}
   bcx brief [carpeta]          ${L('el resumen del repo que recibe Codex', 'the repo brief Codex receives')}
   bcx try "<prompt>"           ${L('lo que se agregaría a ese prompt', 'what would be added to that prompt')}
   bcx guard "<comando>"        ${L('si el guard lo detendría y por qué', 'whether the guard would stop it, and why')}
   bcx allow ["<comando>"]      ${L('lo que el guard deja pasar sin preguntar en este repo', 'what the guard lets through without asking in this repo')}
-  bcx undo [n] [--overwrite]${L('las copias guardadas antes de cada acción que aprobaste, y restaurarlas', 'the copies saved before each action you approved, and restoring them')}
+  bcx undo [n] [--overwrite]   ${L('las copias guardadas antes de cada acción que aprobaste, y restaurarlas', 'the copies saved before each action you approved, and restoring them')}
   bcx config [set k v|reset]   ${L('ajustes', 'settings')}
   bcx uninstall                ${L('quita todo lo instalado', 'removes everything installed')}
 

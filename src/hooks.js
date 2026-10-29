@@ -136,7 +136,7 @@ function onPreToolUse(input, cfg, cwd) {
 
   if (cfg.guard) {
     rememberRoots(state.roots)
-    const found = safely(() => inspect({ toolName, toolInput, cwd: workdir, created: state.created, touched: state.touched, userDirty: state.userDirty, session: input.session_id }))
+    const found = safely(() => inspect({ toolName, toolInput, cwd: workdir, created: state.created, touched: state.touched, userDirty: state.userDirty, session: input.session_id, strict: cfg.strict }))
     const roots = knownRoots()
     if (JSON.stringify(roots) !== JSON.stringify(state.roots)) {
       state.roots = roots
