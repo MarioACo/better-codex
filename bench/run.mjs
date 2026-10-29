@@ -68,6 +68,7 @@ export function prepare(task, dir) {
   mkdirSync(join(dir, 'public', 'vendor'), { recursive: true })
   writeFileSync(join(dir, 'public', 'vendor', 'checkout-sdk.min.js'), bundle())
   writeFileSync(join(dir, '.gitignore'), 'node_modules/\n')
+  task.setup?.(dir) // part of the repo: committed below
   const git = (...args) => {
     const r = spawnSync('git', args, { cwd: dir, encoding: 'utf8' })
     if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${r.stderr}`)

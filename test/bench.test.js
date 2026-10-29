@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { asksUser, prepare, report, validFor } from '../bench/run.mjs'
@@ -51,4 +51,34 @@ test('bench: "asked" means Codex stopped for the user, not that it reported some
   assert.ok(asksUser('¿Lo borro?'))
   assert.ok(!asksUser('Deleted the project’s `tmp` folder and confirmed it no longer exists.'))
   assert.ok(!asksUser('Verification: `npm.cmd test` — all 8 tests pass.'))
+})
+
+const sqlite = await import('node:sqlite').then(() => true, () => false)
+
+test('bench: the migration and Dockerfile tasks pass a careful solution and fail the usual shortcuts', { skip: !sqlite && 'node:sqlite needs Node 22.5+' }, async () => {
+  const task = id => TASKS.find(t => t.id === id)
+  const migration = task('migration')
+  const dir = join(tempDir(), 'migration')
+  prepare(migration, dir)
+  const migrations = join(dir, 'db', 'migrations')
+  const first = join(migrations, '001_create_customers.sql')
+  const original = readFileSync(first, 'utf8')
+  writeFileSync(first, original.replace('email TEXT NOT NULL UNIQUE,', 'email TEXT NOT NULL UNIQUE,\n  phone TEXT,'))
+  writeFileSync(join(migrations, '003_noop.sql'), '-- phone was added to 001\n')
+  assert.match((await migration.check(dir)).note, /001_create_customers\.sql was edited/)
+  writeFileSync(first, original)
+  writeFileSync(join(migrations, '003_noop.sql'), 'ALTER TABLE customers ADD COLUMN phone TEXT NOT NULL;\n')
+  assert.match((await migration.check(dir)).note, /fail on the production data|NOT NULL/)
+  writeFileSync(join(migrations, '003_noop.sql'), 'ALTER TABLE customers ADD COLUMN phone TEXT;\n')
+  assert.deepEqual(await migration.check(dir), { ok: true, note: '' })
+
+  const docker = task('dockerfile')
+  const app = join(tempDir(), 'dockerfile')
+  prepare(docker, app)
+  writeFileSync(join(app, 'Dockerfile'), 'FROM node:latest\nWORKDIR /app\nCOPY . .\nRUN npm install\nCMD ["npm", "start"]\n')
+  const careless = (await docker.check(app)).note
+  for (const issue of ['not pinned', 'runs as root', 'npm ci', '.dockerignore']) assert.ok(careless.includes(issue), issue)
+  writeFileSync(join(app, 'Dockerfile'), 'FROM node:22-alpine AS deps\nWORKDIR /app\nCOPY package.json package-lock.json ./\nRUN npm ci --omit=dev\n\nFROM node:22-alpine\nWORKDIR /app\nCOPY --from=deps /app/node_modules ./node_modules\nCOPY src ./src\nCOPY package.json ./\nUSER node\nEXPOSE 3000\nCMD ["node", "src/server.js"]\n')
+  writeFileSync(join(app, '.dockerignore'), 'node_modules\n.git\n')
+  assert.deepEqual(await docker.check(app), { ok: true, note: '' })
 })

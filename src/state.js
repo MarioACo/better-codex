@@ -16,6 +16,8 @@ export const freshState = () => ({
   // The line that shows the last check failed, or null.
   verifyFailed: null,
   edited: [],
+  // Infra files edited this turn and their checks, per kind (src/infra.js).
+  infra: {},
   gateFired: false,
   bigOutputWarned: false,
   prompt: '',

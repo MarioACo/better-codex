@@ -1,3 +1,4 @@
+import { kindOf } from './infra.js'
 import { clip } from './util.js'
 
 // Builds a case-insensitive, Unicode-aware "whole word" regex. A trailing * means "any word ending".
@@ -63,6 +64,50 @@ export const PLAYBOOKS = {
   docs: 'Docs: accurate to the code, short, with runnable examples.',
   question: 'Question: answer directly first, then the evidence (file:line). Do not modify files unless asked.'
 }
+
+// The area of a task, on top of its kind: the same bug fix needs different care in a migration or a Helm chart.
+// Given once per session, like the playbooks.
+export const DOMAINS = {
+  db: {
+    words: words(['database', 'databases', 'base de datos', 'bases de datos', 'bd', 'sql', 'query', 'queries', 'consulta sql', 'migration*', 'migraci*', 'schema', 'esquema', 'postgres*', 'mysql', 'mariadb', 'sqlite', 'mongo*', 'redis', 'prisma', 'drizzle', 'typeorm', 'sequelize', 'sqlalchemy', 'alembic', 'knex', 'orm', 'indexes', 'índices', 'transaction*', 'transacci*', 'deadlock*']),
+    text: 'Database: read the current schema and the existing migrations first. Schema changes go in a new migration made with the project’s tool (never edit one that may have run), reversible and safe on existing data: add nullable or defaulted first, backfill, then constrain; say so before anything that rewrites or locks a big table. New queries: parameterized, an index for what they filter or join on, no N+1. Run against the local or dev database only.'
+  },
+  infra: {
+    words: words(['terraform', 'tofu', 'opentofu', 'pulumi', 'cdk', 'cloudformation', 'bicep', 'ansible', 'aws', 'gcp', 'azure', 'iam', 'vpc', 's3', 'lambda', 'ec2', 'rds', 'cloud run', 'infra', 'infraestructura', 'infrastructure', 'iac']),
+    text: 'Infrastructure as code: follow the existing modules, naming and variables; no hard-coded secrets, account ids or regions; least-privilege IAM. Run fmt and validate, then plan if credentials allow, and summarize what it creates, changes or destroys. Never apply, destroy, import or edit state yourself: give the user the command.'
+  },
+  containers: {
+    words: words(['docker*', 'dockerfile', 'compose', 'contenedor*', 'container*', 'kubernetes', 'k8s', 'kubectl', 'helm', 'pod', 'pods', 'ingress', 'kustomize']),
+    text: 'Containers and Kubernetes: pin image versions (no :latest), multi-stage builds, install from the lockfile (npm ci, pip install -r with pinned versions), run as non-root, copy only what is needed (.dockerignore). Manifests: resource requests and limits, readiness and liveness probes, config through ConfigMaps and Secrets. Validate (docker build --check, docker compose config, kubectl kustomize, helm lint) and never apply to a shared cluster yourself.'
+  },
+  cicd: {
+    words: words(['ci', 'ci/cd', 'cicd', 'pipeline*', 'github actions', 'workflow', 'workflows', 'gitlab ci', 'gitlab-ci', 'jenkins', 'circleci', 'deploy*', 'despleg*', 'despliegue*']),
+    text: 'CI/CD: read the failing log first (`gh run view --log-failed`) and change the smallest step that fixes it. Pin actions to a version or SHA, minimal `permissions:`, cache dependencies, never print secrets. Deploys stay behind the existing approvals: do not trigger one yourself.'
+  },
+  security: {
+    words: words(['security', 'seguridad', 'vulnerab*', 'xss', 'csrf', 'ssrf', 'sql injection', 'inyección sql', 'injection', 'inyección', 'cve', 'owasp', 'jwt', 'oauth', 'auth', 'autenticaci*', 'authentication', 'authorization', 'autorizaci*', 'permis*', 'permission*', 'encrypt*', 'cifra*', 'secret', 'secrets', 'secreto*', 'credencial*']),
+    text: 'Security: validate and encode at trust boundaries, parameterized queries, authorization checked on every endpoint (not only authentication), no secrets in code or logs, safe defaults. Say which threat each change closes, and add a test for the attack case when the project has tests.'
+  },
+  frontend: {
+    words: words(['ui', 'ux', 'css', 'tailwind', 'frontend', 'front-end', 'component*', 'componente*', 'layout', 'responsive', 'accesib*', 'accessib*', 'a11y', 'pantalla*', 'botón', 'button', 'modal', 'formulario*', 'estilos', 'styles', 'dark mode', 'modo oscuro']),
+    text: 'UI: reuse the existing components, tokens and styles; handle loading, empty and error states; keyboard and screen-reader accessible (labels, focus, contrast); check narrow and wide screens. Verify by building or running it, not only by reading the code.'
+  }
+}
+// Files named in the prompt say the area too: infra/main.tf is infrastructure even if the prompt never says so.
+const FILE_DOMAIN = { terraform: 'infra', docker: 'containers', compose: 'containers', helm: 'containers', kubernetes: 'containers', actions: 'cicd', prisma: 'db' }
+
+export function domainOf(text, files = []) {
+  for (const file of files) {
+    const kind = kindOf(file, '.')
+    if (kind && FILE_DOMAIN[kind.id]) return FILE_DOMAIN[kind.id]
+    if (/(^|\/)(migrations?|db\/migrate)\/|\.sql$/i.test(file)) return 'db'
+  }
+  // The area the prompt talks about most; on a tie, the riskier one ("permisos… inyección sql" is security).
+  const score = id => (text.match(new RegExp(DOMAINS[id].words.source, 'giu')) || []).length
+  const best = TIE_ORDER.map(id => [id, score(id)]).reduce((a, b) => (b[1] > a[1] ? b : a), [null, 0])
+  return best[0]
+}
+const TIE_ORDER = ['security', 'infra', 'containers', 'db', 'cicd', 'frontend']
 
 export function classify(text) {
   if (text.length < 15) return null // "sí", "dale", "continúa": a follow-up, the context already says what to do
@@ -145,7 +190,10 @@ export function boostPrompt(prompt, { files = [], seen = [], hints = true } = {}
   const task = mode === 'ask' || mode === 'plan' ? null : classify(rest)
   if (task && !seen.includes(task)) parts.push(PLAYBOOKS[task])
   const found = hints ? fileHints(rest, files) : []
+  // Questions get answers, not the care a change needs.
+  const domain = task && task !== 'question' ? domainOf(rest, found) : null
+  if (domain && !seen.includes(domain)) parts.push(DOMAINS[domain].text)
   if (found.length) parts.push(`Likely relevant paths (matched from the prompt, confirm before use): ${found.join(', ')}`)
-  const text = parts.length ? clip(`[better-codex] ${parts.join('\n')}`, 1200) : ''
-  return { mode, task, hints: found, text }
+  const text = parts.length ? clip(`[better-codex] ${parts.join('\n')}`, 1600) : ''
+  return { mode, task, domain, hints: found, text }
 }

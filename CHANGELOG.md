@@ -2,7 +2,20 @@
 
 **English** · [Español](CHANGELOG.es.md)
 
-## 0.2.0 — 2026-10-28
+## Unreleased
+
+Infrastructure, databases and DevOps:
+
+- **Guard: infrastructure secrets.** Reading Terraform state (`terraform.tfstate` keeps passwords in plain text), `.tfvars`, kubeconfig, `.pgpass` or Docker's `config.json` now asks first, and so do commands that print secret values: `kubectl get secret -o yaml`, `terraform output -json`, `terraform state pull`, `aws secretsmanager get-secret-value`, `gcloud secrets versions access`, Vault, 1Password, Doppler, Heroku.
+- **Guard: production clusters.** `kubectl apply/patch/scale/rollout…` and `helm install/upgrade/rollback` aimed at production (by `--context`, `--kube-context`, the namespace or kubectl's current context) are critical. A `--dry-run` and other contexts are fine. `terraform state rm/mv/push`, `force-unlock`, `taint` and `docker push` ask too.
+- **Repo brief: infrastructure and databases.** It names the Dockerfiles, the Compose services (Postgres, Redis…), Terraform, Kubernetes, Helm, GitHub Actions, Prisma and the migration folder of each common tool, and the checks Codex can run for them with the tools installed on your machine.
+- **Verify gate: infrastructure checks.** A changed `.tf`, Dockerfile, Compose file, Helm chart, Kubernetes manifest, workflow or Prisma schema has to be checked with its own tool before Codex finishes (`terraform validate`, `docker build --check`, `docker compose config`, `helm lint`, `kubectl kustomize`, actionlint, `prisma validate`), only if that tool is installed. A failed check is read from its output.
+- **Playbooks by area**: databases, infrastructure as code, containers and Kubernetes, CI/CD, security and UI, from the words in the prompt and the files it names, once per session.
+- **Skills**: `$bcx:ci` fixes a failing pipeline from the failed step's log; `$bcx:migrate` changes a schema with a new, reversible migration tested locally.
+- **Images**: the rules tell Codex to view images at the default detail, one or two at a time. In the author's last 30 days, the 60 largest tool outputs were all images viewed at `detail: "original"`.
+- **Benchmark**: two new tasks, a migration on a table with data and a production Dockerfile.
+
+## 0.2.0 — 2026-10-29
 
 Found by testing against real Codex 0.164 (VS Code extension, Windows):
 

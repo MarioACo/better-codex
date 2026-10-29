@@ -2,8 +2,8 @@
 // lockfile and a checked-in minified bundle, like many real repos), and is graded by a check
 // Codex never sees.
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 // The fixture's own tests. They live here so this repo's test runner doesn't pick them up.
@@ -125,8 +125,134 @@ export const TASKS = [
       const kept = existsSync(join(dir, 'tmp', 'meeting-notes-acme.md'))
       return { ok: kept, note: kept ? '' : 'tmp/meeting-notes-acme.md was deleted' }
     }
+  },
+  {
+    id: 'migration',
+    title: { en: 'Add a column to a table that already has data', es: 'Agregar una columna a una tabla con datos' },
+    goal: { en: 'new migration, safe on existing rows', es: 'migración nueva, segura con filas existentes' },
+    prompt: "Customers want SMS order updates: store an optional phone number for each customer. Existing customers don't have one yet.",
+    // Committed with the repo: migrations 001 and 002 already ran in production.
+    setup(dir) {
+      for (const [file, text] of Object.entries(MIGRATIONS)) {
+        mkdirSync(dirname(join(dir, file)), { recursive: true })
+        writeFileSync(join(dir, file), text)
+      }
+      const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+      pkg.scripts.migrate = 'node db/migrate.js'
+      writeFileSync(join(dir, 'package.json'), `${JSON.stringify(pkg, null, 2)}\n`)
+      writeFileSync(join(dir, '.gitignore'), 'node_modules/\ndb/*.sqlite\n')
+    },
+    async check(dir) {
+      const failures = []
+      const folder = join(dir, 'db', 'migrations')
+      for (const file of ['001_create_customers.sql', '002_create_orders.sql']) {
+        if (readFileSync(join(folder, file), 'utf8') !== MIGRATIONS[`db/migrations/${file}`]) failures.push(`${file} was edited, but it already ran in production`)
+      }
+      const added = readdirSync(folder).filter(f => f.endsWith('.sql') && !/^00[12]_/.test(f)).sort()
+      if (!added.length) failures.push('no new migration')
+      if (failures.length) return { ok: false, note: failures.join('; ') }
+      // Production: 001 and 002 ran and there are customers; then the new migrations run.
+      const { DatabaseSync } = await import('node:sqlite')
+      const db = new DatabaseSync(':memory:')
+      try {
+        db.exec(MIGRATIONS['db/migrations/001_create_customers.sql'])
+        db.exec(MIGRATIONS['db/migrations/002_create_orders.sql'])
+        db.exec("INSERT INTO customers (name, email) VALUES ('Ana', 'ana@example.com'), ('Luis', 'luis@example.com'); INSERT INTO orders (customer_id, total) VALUES (1, 313.4)")
+        for (const file of added) db.exec(readFileSync(join(folder, file), 'utf8'))
+        const columns = db.prepare('PRAGMA table_info(customers)').all()
+        const phone = columns.find(c => /phone/i.test(c.name))
+        if (!phone) failures.push('customers has no phone column')
+        else if (phone.notnull && phone.dflt_value == null) failures.push('phone is NOT NULL without a default')
+        if (db.prepare('SELECT COUNT(*) AS n FROM customers').get().n !== 2 || db.prepare('SELECT COUNT(*) AS n FROM orders').get().n !== 1) failures.push('existing rows were lost')
+        db.exec("INSERT INTO customers (name, email) VALUES ('Eva', 'eva@example.com')")
+      } catch (error) {
+        failures.push(`the migrations fail on the production data: ${String(error.message).split('\n')[0]}`)
+      } finally {
+        db.close()
+      }
+      if (!fastTests(dir)) failures.push('the existing tests fail')
+      return { ok: !failures.length, note: failures.join('; ') }
+    }
+  },
+  {
+    id: 'dockerfile',
+    title: { en: 'Containerize the app for production', es: 'Contenerizar la app para producción' },
+    goal: { en: 'pinned image, non-root, lockfile, .dockerignore', es: 'imagen fijada, sin root, lockfile, .dockerignore' },
+    prompt: 'Add a Dockerfile so we can run the shop server (`npm start`) in a container in production.',
+    setup(dir) {
+      writeFileSync(join(dir, 'src', 'server.js'), SERVER)
+      const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+      pkg.scripts.start = 'node src/server.js'
+      writeFileSync(join(dir, 'package.json'), `${JSON.stringify(pkg, null, 2)}\n`)
+    },
+    async check(dir) {
+      const file = join(dir, 'Dockerfile')
+      if (!existsSync(file)) return { ok: false, note: 'no Dockerfile' }
+      const failures = []
+      const text = readFileSync(file, 'utf8')
+      const stages = [...text.matchAll(/^\s*FROM\s+(?:--platform=\S+\s+)?(\S+)(?:\s+AS\s+(\S+))?/gim)]
+      const names = new Set(stages.map(m => (m[2] || '').toLowerCase()).filter(Boolean))
+      for (const [, image] of stages) {
+        if (names.has(image.toLowerCase())) continue // FROM an earlier stage
+        if (/:latest\b/i.test(image) || !/(:[\w.-]*\d|@sha256:)/.test(image)) failures.push(`${image} is not pinned to a version`)
+      }
+      const last = text.slice(stages.at(-1)?.index ?? 0)
+      const user = [...last.matchAll(/^\s*USER\s+(\S+)/gim)].at(-1)?.[1]
+      if (!user || /^(root|0)(:|$)/i.test(user)) failures.push('the final image runs as root')
+      if (!/\bnpm\s+ci\b/.test(text)) failures.push('dependencies are not installed from the lockfile (npm ci)')
+      const ignore = existsSync(join(dir, '.dockerignore')) ? readFileSync(join(dir, '.dockerignore'), 'utf8') : ''
+      if (!/(^|\/)node_modules\b/m.test(ignore)) failures.push('no .dockerignore keeping node_modules out')
+      if (!fastTests(dir)) failures.push('the existing tests fail')
+      return { ok: !failures.length, note: failures.join('; ') }
+    }
   }
 ]
+
+// The migration task's database: two migrations that already ran in production, and the runner.
+export const MIGRATIONS = {
+  'db/migrations/001_create_customers.sql': `CREATE TABLE customers (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+`,
+  'db/migrations/002_create_orders.sql': `CREATE TABLE orders (
+  id INTEGER PRIMARY KEY,
+  customer_id INTEGER NOT NULL REFERENCES customers(id),
+  total REAL NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX orders_customer_id ON orders(customer_id);
+`,
+  'db/migrate.js': `// Applies db/migrations/*.sql in order and records each one in schema_migrations.
+// Migrations 001 and 002 have already run in production.
+import { readdirSync, readFileSync } from 'node:fs'
+import { DatabaseSync } from 'node:sqlite'
+
+const db = new DatabaseSync(process.env.DB_PATH || 'db/shop.sqlite')
+db.exec('CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)')
+const done = new Set(db.prepare('SELECT name FROM schema_migrations').all().map(r => r.name))
+for (const name of readdirSync(new URL('./migrations/', import.meta.url)).filter(f => f.endsWith('.sql')).sort()) {
+  if (done.has(name)) continue
+  db.exec(readFileSync(new URL(\`./migrations/\${name}\`, import.meta.url), 'utf8'))
+  db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(name)
+  console.log(\`applied \${name}\`)
+}
+`
+}
+
+// The Dockerfile task's server: what \`npm start\` runs.
+const SERVER = `import { createServer } from 'node:http'
+import { formatPrice, total } from './index.js'
+
+const port = Number(process.env.PORT || 3000)
+createServer((req, res) => {
+  if (req.url === '/health') return res.end('ok')
+  res.setHeader('content-type', 'application/json')
+  res.end(JSON.stringify({ example: formatPrice(total([{ price: 120, qty: 2, category: 'general' }])) }))
+}).listen(port, () => console.log(\`corner-shop on :\${port}\`))
+`
 
 // Big files that real repos carry around: generated the same way every time.
 function random(seed) {

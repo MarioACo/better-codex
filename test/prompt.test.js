@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { boostPrompt, classify, fileHints, parseMode } from '../src/prompt.js'
+import { boostPrompt, classify, domainOf, fileHints, parseMode } from '../src/prompt.js'
 
 test('modes: prefixes in English and Spanish, the marker is dropped', () => {
   assert.deepEqual(parseMode('+fix the parser'), { mode: 'deep', rest: 'fix the parser' })
@@ -80,4 +80,23 @@ test('boostPrompt: ask and plan modes never get an editing playbook', () => {
 test('boostPrompt: stays small', () => {
   const r = boostPrompt('+arregla el login que truena cuando `ReportTable` carga checkout-service', { files: FILES })
   assert.ok(r.text.length <= 1200)
+})
+
+test('domains: database, infrastructure, containers, CI/CD, security and UI each get their own care, once', () => {
+  const cases = {
+    'agrega una columna email a la tabla users con su migración': 'db',
+    'optimiza la query de reportes que tarda 8 segundos en postgres': 'db',
+    'arregla el terraform del bucket s3, el plan falla': 'infra',
+    'crea un Dockerfile para la api y un compose con postgres': 'containers',
+    'el pipeline de github actions falla en el paso de tests': 'cicd',
+    'agrega validación de permisos al endpoint de pagos para evitar inyección sql': 'security',
+    'haz que el botón de pagar sea accesible y responsive': 'frontend',
+    'arregla el bug del login que truena al guardar': null
+  }
+  for (const [prompt, domain] of Object.entries(cases)) assert.equal(boostPrompt(prompt).domain, domain, prompt)
+  assert.equal(domainOf('fix the plan', ['infra/main.tf']), 'infra') // the files named say it too
+  assert.equal(domainOf('update it', ['prisma/schema.prisma']), 'db')
+  assert.equal(boostPrompt('¿cómo funciona la migración de usuarios?').domain, null) // a question gets an answer
+  assert.match(boostPrompt('agrega una migración para la tabla orders').text, /Database: read the current schema[\s\S]*never edit one that may have run/)
+  assert.doesNotMatch(boostPrompt('ahora crea otra migración para la tabla users', { seen: ['feature', 'db'] }).text, /Database:/)
 })

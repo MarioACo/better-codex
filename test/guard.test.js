@@ -270,6 +270,24 @@ test('package.json scripts are what they run', () => {
   assert.equal(rule('npm install', root), null)
 })
 
+test('infrastructure: secrets in state, tfvars and kubeconfig, production clusters, state surgery', () => {
+  const root = repo()
+  for (const command of ['cat terraform.tfstate', 'Get-Content prod.tfvars', 'jq .resources terraform.tfstate.backup', 'cat ~/.kube/config', 'type .pgpass', 'cat ~/.docker/config.json']) {
+    assert.equal(rule(command, root), 'secrets-read', command)
+  }
+  for (const command of ["kubectl get secret db -o jsonpath='{.data.password}'", 'terraform output -json', 'terraform state pull', 'aws secretsmanager get-secret-value --secret-id prod/db', 'gcloud secrets versions access latest --secret=api-key']) {
+    assert.equal(rule(command, root), 'secrets-read', command)
+  }
+  assert.equal(bash('kubectl apply -f k8s/ --context prod-eu', root).severity, 'critical')
+  assert.equal(rule('kubectl apply -f k8s/ -n production', root), 'infra')
+  assert.equal(rule('helm upgrade api ./chart --kube-context=prod', root), 'infra')
+  for (const command of ['terraform state rm aws_db_instance.main', 'terraform force-unlock 1234', 'docker push ghcr.io/acme/api:1.0']) assert.equal(rule(command, root), 'infra', command)
+  // reading and planning are fine
+  for (const command of ['cat terraform.tfvars.example', 'kubectl get secrets', 'kubectl get pods -n production', 'kubectl apply -f k8s/ --context prod --dry-run=client', 'kubectl apply -f k8s/ --context kind-dev', 'terraform plan', 'terraform validate', 'docker build -t api .']) {
+    assert.equal(rule(command, root), null, command)
+  }
+})
+
 test('more git and system cases', () => {
   const root = repo()
   assert.equal(rule('git push --mirror origin', root), 'git-history')

@@ -126,7 +126,7 @@ export function doctor({ offline = false } = {}) {
       const hooksFlag = /^hooks\s+.*?\b(true|false)\s*$/m.exec(features)?.[1]
       add(hooksFlag === 'true' ? 'ok' : hooksFlag ? 'fail' : 'warn', 'features.hooks', hooksFlag ?? 'unknown')
       const root = marketplaceRoot(codex)
-      add(root ? 'ok' : 'warn', 'marketplace', root ?? 'not registered (skills $bcx:commit, $bcx:refine, $bcx:handoff, $bcx:debug)')
+      add(root ? 'ok' : 'warn', 'marketplace', root ?? 'not registered (skills $bcx:commit, $bcx:refine, $bcx:handoff, $bcx:debug, $bcx:ci, $bcx:migrate)')
     }
   }
 

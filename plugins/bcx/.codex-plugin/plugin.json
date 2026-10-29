@@ -1,7 +1,7 @@
 {
   "name": "bcx",
-  "version": "0.1.0",
-  "description": "better-codex skills: Conventional Commits, refine a vague request, hand off long sessions, and debug methodically.",
+  "version": "0.2.0",
+  "description": "better-codex skills: Conventional Commits, refine a vague request, hand off long sessions, debug methodically, fix failing CI and migrate databases safely.",
   "author": {
     "name": "MarioACo",
     "url": "https://github.com/MarioACo"
@@ -9,17 +9,37 @@
   "homepage": "https://github.com/MarioACo/better-codex",
   "repository": "https://github.com/MarioACo/better-codex",
   "license": "MIT",
-  "keywords": ["git", "commit", "prompt", "refine", "handoff", "context", "debugging"],
+  "keywords": [
+    "git",
+    "commit",
+    "prompt",
+    "refine",
+    "handoff",
+    "context",
+    "debugging",
+    "ci",
+    "github-actions",
+    "database",
+    "migrations"
+  ],
   "skills": "./skills/",
   "interface": {
     "displayName": "better-codex",
-    "shortDescription": "Commit, refine, handoff and debug",
-    "longDescription": "$bcx:commit splits your changes into Conventional Commits and pushes or not. $bcx:refine turns a rough request into a brief with goal, files, constraints, acceptance criteria and verification. $bcx:handoff writes a compact note so the work continues in a fresh, cheap session. $bcx:debug runs reproduce → isolate → root cause → regression test.",
+    "shortDescription": "Commit, refine, handoff, debug, CI and migrations",
+    "longDescription": "$bcx:commit splits your changes into Conventional Commits and pushes or not. $bcx:refine turns a rough request into a brief with goal, files, constraints, acceptance criteria and verification. $bcx:handoff writes a compact note so the work continues in a fresh, cheap session. $bcx:debug runs reproduce → isolate → root cause → regression test. $bcx:ci fixes a failing pipeline from the failed step's log. $bcx:migrate changes a database schema with a reversible migration tested locally.",
     "developerName": "better-codex",
     "category": "Productivity",
-    "capabilities": ["Interactive", "Read", "Write"],
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
     "websiteURL": "https://github.com/MarioACo/better-codex",
-    "defaultPrompt": ["$bcx:commit", "$bcx:refine add CSV export to the reports page", "$bcx:handoff"],
+    "defaultPrompt": [
+      "$bcx:commit",
+      "$bcx:refine add CSV export to the reports page",
+      "$bcx:handoff"
+    ],
     "brandColor": "#0EA5E9"
   }
 }

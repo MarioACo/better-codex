@@ -2,7 +2,20 @@
 
 [English](CHANGELOG.md) · **Español**
 
-## 0.2.0 — 2026-10-28
+## Sin publicar
+
+Infraestructura, bases de datos y DevOps:
+
+- **Guard: secretos de infraestructura.** Leer el estado de Terraform (`terraform.tfstate` guarda contraseñas en texto plano), `.tfvars`, kubeconfig, `.pgpass` o el `config.json` de Docker ahora pregunta antes, igual que los comandos que imprimen valores secretos: `kubectl get secret -o yaml`, `terraform output -json`, `terraform state pull`, `aws secretsmanager get-secret-value`, `gcloud secrets versions access`, Vault, 1Password, Doppler, Heroku.
+- **Guard: clústeres de producción.** `kubectl apply/patch/scale/rollout…` y `helm install/upgrade/rollback` dirigidos a producción (por `--context`, `--kube-context`, el namespace o el contexto actual de kubectl) son críticos. Un `--dry-run` y los demás contextos no preguntan. También preguntan `terraform state rm/mv/push`, `force-unlock`, `taint` y `docker push`.
+- **Resumen del repo: infraestructura y bases de datos.** Nombra los Dockerfiles, los servicios de Compose (Postgres, Redis…), Terraform, Kubernetes, Helm, GitHub Actions, Prisma y la carpeta de migraciones de cada herramienta común, y las verificaciones que Codex puede correr con las herramientas instaladas en tu máquina.
+- **Verify gate: verificaciones de infraestructura.** Un `.tf`, Dockerfile, archivo de Compose, chart de Helm, manifiesto de Kubernetes, workflow o schema de Prisma que cambió tiene que revisarse con su herramienta antes de que Codex termine (`terraform validate`, `docker build --check`, `docker compose config`, `helm lint`, `kubectl kustomize`, actionlint, `prisma validate`), solo si esa herramienta está instalada. El fallo se lee de su salida.
+- **Guías por área**: bases de datos, infraestructura como código, contenedores y Kubernetes, CI/CD, seguridad e interfaz, según las palabras del prompt y los archivos que nombra, una vez por sesión.
+- **Skills**: `$bcx:ci` arregla un pipeline que falla desde el log del paso que falló; `$bcx:migrate` cambia un schema con una migración nueva y reversible probada en local.
+- **Imágenes**: las reglas le piden a Codex ver las imágenes con el detalle por defecto, una o dos a la vez. En los últimos 30 días del autor, las 60 salidas más grandes de herramientas fueron todas imágenes vistas con `detail: "original"`.
+- **Benchmark**: dos tareas nuevas, una migración sobre una tabla con datos y un Dockerfile de producción.
+
+## 0.2.0 — 2026-10-29
 
 Encontrado probando con Codex 0.164 de verdad (extensión de VS Code, Windows):
 

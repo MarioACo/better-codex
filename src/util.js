@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
-import { closeSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { delimiter, dirname, join } from 'node:path'
 
 // GIT_OPTIONAL_LOCKS=0: `git status` must not take index.lock while Codex runs its own git commands.
 // GIT_TERMINAL_PROMPT=0: never wait for credentials.
@@ -94,3 +94,7 @@ export const estimateTokens = text => Math.ceil(String(text ?? '').length / 4)
 export const clip = (text, max) => (text.length <= max ? text : `${text.slice(0, max - 1)}…`)
 
 export const toPosix = path => path.replace(/\\/g, '/')
+
+// Whether a program is installed: on PATH, as name, name.exe or name.cmd.
+export const onPath = (name, path = process.env.PATH || '') =>
+  path.split(delimiter).some(dir => dir && ['', '.exe', '.cmd'].some(ext => existsSync(join(dir, name + ext))))

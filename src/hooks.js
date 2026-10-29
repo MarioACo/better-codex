@@ -15,7 +15,7 @@ import { readUsage } from './transcript.js'
 import { backup, canBackup, summary } from './undo.js'
 import { dataDir } from './paths.js'
 import { clip, estimateTokens, writeJson } from './util.js'
-import { gateReason, trackTool } from './verify.js'
+import { gate, trackTool } from './verify.js'
 
 export const EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop']
 
@@ -105,6 +105,7 @@ function onUserPromptSubmit(input, cfg, cwd) {
     lastVerify: 0,
     verifyFailed: null,
     edited: [],
+    infra: {},
     gateFired: false,
     bigOutputWarned: false,
     prompt: clip(prompt, 4000),
@@ -115,10 +116,10 @@ function onUserPromptSubmit(input, cfg, cwd) {
     safely(() => {
       const files = cfg.hints && root && prompt.length >= 8 ? gitFiles(root) : []
       const result = boostPrompt(prompt, { files, seen: state.playbooks, hints: cfg.hints })
-      if (result.task && !state.playbooks.includes(result.task)) state.playbooks.push(result.task)
+      for (const given of [result.task, result.domain]) if (given && !state.playbooks.includes(given)) state.playbooks.push(given)
       if (result.text) {
         parts.push(result.text)
-        record('boost', { mode: result.mode, task: result.task, hints: result.hints.length, tokens: estimateTokens(result.text) })
+        record('boost', { mode: result.mode, task: result.task, domain: result.domain, hints: result.hints.length, tokens: estimateTokens(result.text) })
       }
     })
   }
@@ -250,17 +251,18 @@ function onStop(input, cfg, lang) {
 
   // Not while Codex waits for your approval, and only once per turn.
   if (cfg.verifyGate && !input.stop_hook_active && !state.guard.pending.length) {
-    const reason = safely(() => gateReason(state, { verify: state.verifyCmd }))
-    if (reason) {
+    const sent = safely(() => gate(state, { verify: state.verifyCmd }))
+    if (sent) {
       state.gateFired = true
       out.decision = 'block'
-      out.reason = reason
-      const failed = state.lastVerify >= state.lastEdit && state.verifyFailed
+      out.reason = sent.reason
+      const failed = !sent.checks.length && sent.failed
+      const checks = sent.checks.map(c => `\`${c}\``).join(', ')
       record('verify-gate', { failed: !!failed })
       messages.push(
         failed
           ? pick(lang, `better-codex: la verificación falló («${failed}»); le pedí a Codex arreglarla o explicarla antes de terminar.`, `better-codex: the check failed ("${failed}"); asked Codex to fix or explain it before finishing.`)
-          : pick(lang, `better-codex: le pedí a Codex verificar con \`${state.verifyCmd}\` antes de terminar.`, `better-codex: asked Codex to verify with \`${state.verifyCmd}\` before finishing.`)
+          : pick(lang, `better-codex: le pedí a Codex verificar con ${checks} antes de terminar.`, `better-codex: asked Codex to verify with ${checks} before finishing.`)
       )
     }
   }

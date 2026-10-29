@@ -1,9 +1,10 @@
-import { existsSync, statSync } from 'node:fs'
-import { delimiter, join } from 'node:path'
+import { statSync } from 'node:fs'
+import { join } from 'node:path'
 import { gitBranch, gitChanges, gitFiles, gitRoot } from './git.js'
+import { infraLines } from './infra.js'
 import { detectProject } from './project.js'
 import { duration, slowCommands } from './slow.js'
-import { clip } from './util.js'
+import { clip, onPath } from './util.js'
 
 export const HANDOFF = '.codex/handoff.md'
 const HANDOFF_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000
@@ -36,8 +37,7 @@ function handoffLine(root) {
   }
 }
 
-export const onPath = (name, path = process.env.PATH || '') =>
-  path.split(delimiter).some(dir => dir && ['', '.exe', '.cmd'].some(ext => existsSync(join(dir, name + ext))))
+export { onPath }
 
 // First calls that failed in real sessions, every time: rg not installed, and npm.ps1 blocked by
 // PowerShell's execution policy. Saying so up front saves the failed call and its output.
@@ -70,6 +70,8 @@ export function repoBrief(cwd) {
   const commands = Object.entries(project.commands).map(([name, cmd]) => `${name} \`${cmd}\``)
   if (commands.length) lines.push(`- commands: ${commands.join(' · ')}`)
   if (project.verify) lines.push(`- after code changes verify with \`${project.verify}\` (or a narrower check)`)
+  const files = root ? gitFiles(root) : []
+  lines.push(...infraLines(base, files))
   const shell = shellLine({ root, commands: Object.values(project.commands).join(' ') })
   if (shell) lines.push(shell)
   const slow = slowCommands(base)
@@ -77,10 +79,11 @@ export function repoBrief(cwd) {
     lines.push(`- slow here last time: ${slow.map(s => `\`${clip(s.command, 60)}\` ${duration(s.seconds)}`).join(' · ')}. Run these with the one-exec polling loop.`)
   }
   if (root) {
-    const layout = layoutOf(gitFiles(root))
+    const layout = layoutOf(files)
     if (layout) lines.push(`- layout: ${layout}`)
   }
   const handoff = handoffLine(base)
   if (handoff) lines.push(handoff)
-  return clip(lines.join('\n'), 1400)
+  // Room for the infra and db lines: a repo with Terraform or migrations needs them more than most.
+  return clip(lines.join('\n'), 1800)
 }

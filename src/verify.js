@@ -1,6 +1,8 @@
-import { resolve } from 'node:path'
+import { isAbsolute, relative, resolve } from 'node:path'
 import { canon } from './guard.js'
+import { KINDS, kindOf } from './infra.js'
 import { patchFiles, shellWrites, toolCommands } from './shell.js'
+import { toPosix } from './util.js'
 
 export const CODE_EXT = /\.(c|cc|cpp|h|hpp|cs|fs|go|java|kt|kts|scala|swift|m|mm|rs|py|rb|php|js|jsx|mjs|cjs|ts|tsx|mts|cts|vue|svelte|astro|dart|lua|ex|exs|sql|sh|ps1|gradle|html)$/i
 
@@ -69,21 +71,61 @@ export function trackTool(state, { toolName, toolInput, cwd, verifyCmd, output }
     state.lastVerify = state.seq
     state.verifyFailed = failureOf(output)
   }
+  // Infrastructure files have their own checks (src/infra.js): terraform validate, docker compose config…
+  state.infra ??= {}
+  for (const file of edits) {
+    const rel = toPosix(isAbsolute(file) ? relative(cwd, file) : file)
+    const kind = kindOf(rel, cwd)
+    if (!kind) continue
+    const entry = (state.infra[kind.id] ??= { files: [], base: cwd })
+    entry.edited = state.seq
+    entry.files = union(entry.files, [rel], 20)
+  }
+  const text = typeof output === 'string' ? output : JSON.stringify(output ?? '')
+  for (const kind of KINDS) {
+    if (!commands.some(c => kind.ran.test(withoutExt(c)))) continue
+    state.seq += 1
+    const entry = (state.infra[kind.id] ??= { files: [], base: cwd })
+    entry.checked = state.seq
+    const m = kind.failed.exec(text)
+    entry.failed = m ? text.slice(text.lastIndexOf('\n', m.index) + 1, text.indexOf('\n', m.index) === -1 ? undefined : text.indexOf('\n', m.index)).trim().slice(0, 160) : null
+  }
   return { edits: edits.length, verified }
 }
 
-// Stop: the reason that sends Codex back to verify, or null.
-export function gateReason(state, project) {
-  if (!project?.verify || state.gateFired) return null
-  const code = state.edited.filter(f => CODE_EXT.test(f))
-  if (!code.length) return null
-  if (state.lastEdit > state.lastVerify) {
+// Stop: why Codex goes back to verify (reason), the checks it was asked for and the failure it has to
+// fix, or null. Code goes through the project's verify command; each kind of infra file through its own check.
+export function gate(state, project) {
+  if (state.gateFired) return null
+  const checks = []
+  const failures = []
+  const parts = []
+  const code = project?.verify ? state.edited.filter(f => CODE_EXT.test(f)) : []
+  if (code.length && state.lastEdit > state.lastVerify) {
     const files = `${code.slice(0, 5).join(', ')}${code.length > 5 ? ', …' : ''}`
-    return `[better-codex verify-gate] You changed code (${files}) but ran no check after the last edit. Run \`${project.verify}\` or a narrower, faster check that covers the change, fix what fails, then give your final answer with the result. If it cannot run here, say why in one line instead.`
+    checks.push(project.verify)
+    parts.push(`You changed code (${files}) but ran no check after the last edit. Run \`${project.verify}\` or a narrower, faster check that covers the change, fix what fails, then give your final answer with the result. If it cannot run here, say why in one line instead.`)
+  } else if (code.length && state.verifyFailed) {
+    failures.push(state.verifyFailed)
+    parts.push(`The last check after your changes failed: "${state.verifyFailed}". Fix the cause and run the check again before finishing. If the failure is unrelated to your change or was already there, say so plainly in your answer instead of reporting success.`)
   }
+  for (const kind of KINDS) {
+    const entry = state.infra?.[kind.id]
+    if (!entry?.edited) continue
+    if (entry.edited > (entry.checked || 0)) {
+      const check = kind.check(entry.files, entry.base)
+      if (!check) continue // not installed here: Codex couldn't run it either
+      checks.push(check)
+      parts.push(`You changed ${kind.label} files (${entry.files.slice(0, 3).join(', ')}) and did not check them. Run \`${check}\`${kind.id === 'terraform' ? ' (run \`terraform init -backend=false\` first if it asks)' : ''}, fix what it reports, and say the result. Do not plan against, apply to or deploy a real environment for this.`)
+    } else if (entry.failed) {
+      failures.push(entry.failed)
+      parts.push(`The ${kind.label} check failed: "${entry.failed}". Fix it and check again, or say plainly that it still fails and why.`)
+    }
+  }
+  if (!parts.length) return null
   // Codex already told the user it still fails: sending it back would only cost a request.
-  if (state.verifyFailed && !ACKNOWLEDGED.test(state.lastAnswer || '')) {
-    return `[better-codex verify-gate] The last check after your changes failed: "${state.verifyFailed}". Fix the cause and run the check again before finishing. If the failure is unrelated to your change or was already there, say so plainly in your answer instead of reporting success.`
-  }
-  return null
+  if (!checks.length && ACKNOWLEDGED.test(state.lastAnswer || '')) return null
+  return { reason: `[better-codex verify-gate] ${parts.join(' ')}`, checks, failed: failures[0] ?? null }
 }
+
+export const gateReason = (state, project) => gate(state, project)?.reason ?? null

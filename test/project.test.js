@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { layoutOf, onPath, shellLine } from '../src/brief.js'
 import { parseValue } from '../src/config.js'
+import { infraLines } from '../src/infra.js'
 import { detectProject, testCommand } from '../src/project.js'
 import { isolate, tempDir, write } from './helpers.js'
 import { duration, rememberSlow, slowCommands } from '../src/slow.js'
@@ -82,4 +83,24 @@ test('slow commands: remembered per repo, slowest first, a few at most', () => {
   assert.equal(duration(260), '~4 min')
   assert.equal(duration(75), '~75 s')
   assert.deepEqual(slowCommands('/nowhere'), [])
+})
+
+test('brief: infrastructure and database, with the checks of the tools installed here', () => {
+  const root = tempDir()
+  write(root, { 'docker-compose.yml': 'services:\n  db:\n    image: postgres:16\n  cache:\n    image: "redis:7-alpine"\n  api:\n    build: .\n', 'charts/api/Chart.yaml': 'name: api\n' })
+  const files = ['Dockerfile', 'docker-compose.yml', 'infra/main.tf', 'infra/vars.tf', 'k8s/deploy.yaml', 'charts/api/Chart.yaml', 'charts/api/templates/svc.yaml', '.github/workflows/ci.yml', 'prisma/schema.prisma', 'prisma/migrations/20240101000000_init/migration.sql', 'src/app.ts']
+  const bin = tempDir('bcx-bin-')
+  write(bin, { docker: '', terraform: '' })
+  const saved = process.env.PATH
+  process.env.PATH = bin
+  try {
+    const [infra, db, checks] = infraLines(root, files)
+    assert.equal(infra, '- infra: Dockerfile · Compose (postgres, redis) · Terraform (infra/) · Kubernetes (k8s/) · Helm (charts/api) · GitHub Actions')
+    assert.match(db, /^- db: Prisma \(1 migration in prisma\/migrations\)\. Add a new migration/)
+    assert.match(checks, /`docker build --check -f Dockerfile \.` · `docker compose -f docker-compose\.yml config -q` · `terraform fmt -check -recursive && terraform -chdir=infra validate` · `npx prisma validate`\. Never apply/)
+    assert.doesNotMatch(checks, /helm lint|actionlint|kubeconform/) // not installed here
+  } finally {
+    process.env.PATH = saved
+  }
+  assert.deepEqual(infraLines(root, ['src/app.ts', 'README.md']), [])
 })

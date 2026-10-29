@@ -125,7 +125,7 @@ export const RULES = {
   }
 }
 
-const SECRET = /(^|[\\/])(\.env(\.(?!example\b|sample\b|template\b|dist\b|defaults?\b)[\w.-]+)?|\.npmrc|\.pypirc|\.netrc|\.git-credentials|id_(rsa|dsa|ecdsa|ed25519)|[\w.-]*\.(pem|key|p12|pfx|keystore|jks|ppk)|credentials(\.(json|ya?ml|toml|xml|csv))?|[\w.-]*service[-_]?account[\w.-]*\.json|auth\.json|secrets?\.(json|ya?ml|toml))$/i
+const SECRET = /(^|[\\/])(\.env(\.(?!example\b|sample\b|template\b|dist\b|defaults?\b)[\w.-]+)?|\.npmrc|\.pypirc|\.netrc|\.git-credentials|id_(rsa|dsa|ecdsa|ed25519)|[\w.-]*\.(pem|key|p12|pfx|keystore|jks|ppk)|credentials(\.(json|ya?ml|toml|xml|csv))?|[\w.-]*service[-_]?account[\w.-]*\.json|auth\.json|secrets?\.(json|ya?ml|toml)|[\w.-]*\.tfstate(\.backup)?|[\w.-]*\.tfvars(\.json)?|\.kube[\\/]config|kubeconfig(\.ya?ml)?|[\w.-]*\.kubeconfig|\.pgpass|\.my\.cnf|\.vault-token|\.docker[\\/]config\.json)$/i
 export const isSecretPath = path => SECRET.test(String(path).replace(/["']/g, ''))
 
 // Folders and files that only an install, a build or a tool writes: deleting them loses nothing.
@@ -138,7 +138,7 @@ const SCRATCH =/(^|[\\/])(dist|build|out|target|obj|tmp|temp|\.tmp)[\\/]?$/i
 const EVERYTHING = /^(\/|[a-z]:[\\/]?|~[\\/]?|\$home[\\/]?|\$env:userprofile[\\/]?|%userprofile%[\\/]?|\*|\.[\\/]?\*?|\.\.[\\/]?\*?|\.git[\\/]?)$/i
 
 const DELETE_VERBS = new Set(['rm', 'del', 'erase', 'rd', 'rmdir', 'remove-item', 'ri', 'unlink', 'shred', 'rimraf', 'trash'])
-const READ_VERBS = new Set(['cat', 'type', 'bat', 'less', 'more', 'head', 'tail', 'nl', 'get-content', 'gc', 'rg', 'grep', 'select-string', 'sls', 'findstr', 'awk', 'sed', 'strings', 'base64', 'certutil'])
+const READ_VERBS = new Set(['cat', 'type', 'bat', 'less', 'more', 'head', 'tail', 'nl', 'get-content', 'gc', 'rg', 'grep', 'select-string', 'sls', 'findstr', 'awk', 'sed', 'strings', 'base64', 'certutil', 'jq', 'yq'])
 const COPY_VERBS = new Set(['cp', 'copy', 'copy-item', 'cpi', 'mv', 'move', 'move-item', 'mi', 'ren', 'rename-item'])
 const DB_CLIENT = /^(psql|mysql|mariadb|sqlite3|sqlcmd|invoke-sqlcmd|mongosh|mongo|redis-cli|cqlsh|clickhouse-client|duckdb|supabase|prisma|rails|rake|bin\/rails|php|python3?|py|sequelize|typeorm|knex|drizzle-kit|dropdb|flyway|liquibase|alembic|npx|pnpm|yarn|bunx|bun|dotnet)$/
 const DESTRUCTIVE_SQL = [
@@ -166,7 +166,9 @@ const DESTRUCTIVE_DB = [
 ]
 const INFRA = [
   /^(npx\s+)?terraform\s+(destroy|apply\b[\s\S]*-auto-approve)/i,
+  /^(npx\s+)?terraform\s+(state\s+(rm|mv|push|replace-provider)|force-unlock|taint|workspace\s+delete)\b/i,
   /^kubectl\s+(delete|drain)\b/i,
+  /^docker\s+(image\s+)?push\b|^docker\s+buildx\s+build\b[\s\S]*\s--push\b/i,
   /^helm\s+(uninstall|delete|rollback)\b/i,
   /^docker\s+(system\s+prune|volume\s+(rm|prune)|image\s+prune\s+-a|container\s+prune)\b/i,
   /^docker(-compose|\s+compose)\b[\s\S]*\bdown\b[\s\S]*(\s-v\b|--volumes)/i,
@@ -193,6 +195,18 @@ const SYSTEM = [
   /^set-executionpolicy\b[\s\S]*\b(unrestricted|bypass)\b/i,
   /^takeown\b|^icacls\b[\s\S]*\/grant\s+(everyone|todos)/i
 ]
+// Commands whose output is secret values: Kubernetes secrets, Terraform state and outputs, cloud secret stores.
+const PRINTS_SECRETS = [
+  /^(kubectl|oc)\s+get\s+secrets?\b[\s\S]*(-o|--output)[=\s]*["']?(ya?ml|json|jsonpath|go-template)/i,
+  /^(npx\s+)?terraform\s+(state\s+pull|show\b[\s\S]*-json|output\b[\s\S]*(-json|-raw))/i,
+  /^aws\s+secretsmanager\s+get-secret-value\b|^aws\s+ssm\s+get-parameters?(-by-path)?\b[\s\S]*--with-decryption/i,
+  /^gcloud\s+secrets\s+versions\s+access\b|^az\s+keyvault\s+secret\s+show\b|^vault\s+(kv\s+get|read)\b/i,
+  /^op\s+(read|item\s+get)\b|^doppler\s+secrets\b|^heroku\s+config(:get)?\b|^railway\s+variables\b|^(npx\s+)?netlify\s+env:(get|list)\b/i
+]
+// Kubernetes and Helm commands that change a cluster; in production they are critical (checkCluster).
+const KUBE_WRITE = /^(kubectl|oc)\s+(apply|create|replace|patch|delete|scale|edit|drain|cordon|taint|label|annotate|set|autoscale|expose|rollout\s+(restart|undo))\b/i
+const HELM_WRITE = /^helm\s+(install|upgrade|rollback|uninstall|delete)\b/i
+const PROD = /(^|[^a-z])(prod|production|prd|live)([^a-z]|$)/i
 const REMOTE_EXEC = /\b(curl|wget|iwr|invoke-webrequest|irm|invoke-restmethod)\b[^|;]*\|\s*(sudo\s+)?(sh|bash|zsh|iex|invoke-expression|python3?|node|pwsh|powershell)\b|\biex\s*\(\s*(new-object\s+net\.webclient|iwr|irm|invoke-webrequest|invoke-restmethod)/i
 
 export const norm = path => {
@@ -221,6 +235,7 @@ function context({ cwd, created = [], touched = [], userDirty = [], aliases, all
   const root = () => (repo ??= { root: gitRoot(cwd) }).root
   const realRoot = () => (repo.real ??= real(repo.root))
   let status = null
+  let kube = null
   // Same spelling on both sides of every comparison; built only when a rule asks.
   let sets = null
   const set = name => (sets ??= { created: new Set(created.map(canon)), touched: new Set(touched.map(canon)), userDirty: new Set(userDirty.map(canon)) })[name]
@@ -243,6 +258,8 @@ function context({ cwd, created = [], touched = [], userDirty = [], aliases, all
     expanding: new Set(),
     // Scripts, package.json scripts and profile definitions being read: your code, not what Codex typed.
     reading: 0,
+    // kubectl's current context, asked only when a command would change a cluster.
+    kubeContext: () => (kube ??= { name: run('kubectl', ['config', 'current-context']) }).name,
     // You allowed this kind of action in this repo with `bcx allow`: generated/ covers generated/x.
     allowed(found) {
       allow ??= root() ? allowedFor(canon(root())) : []
@@ -484,12 +501,27 @@ function checkSecrets(seg, ctx) {
       return { rule: 'secrets-write', severity: 'high', detail: `${seg.verb} over the existing ${dest}`, save: { paths: [ctx.abs(dest)] } }
     }
   }
+  if (PRINTS_SECRETS.some(re => re.test(seg.text))) return { rule: 'secrets-read', severity: 'high', detail: `${seg.text.slice(0, 120)} prints secret values` }
   if ((/^(printenv|env)$/.test(seg.verb) && seg.argv.length === 1) || /^(get-childitem|gci|dir|ls)\s+env:\\?\s*$/i.test(seg.text) || (seg.verb === 'set' && seg.argv.length === 1)) {
     return { rule: 'secrets-read', severity: 'high', detail: `${seg.text} prints every environment variable, tokens included` }
   }
   const written = shellWrites(seg.text).filter(isSecretPath)
   if (written.length) return { rule: 'secrets-write', severity: 'high', detail: `writes ${written.join(', ')}`, save: { paths: written.map(ctx.abs) } }
   return null
+}
+
+// kubectl apply / helm upgrade aimed at production: from --context, --kube-context or the namespace, else the
+// current context (asked once, only for these commands). A dry run changes nothing.
+function checkCluster(seg, ctx) {
+  if ((!KUBE_WRITE.test(seg.text) && !HELM_WRITE.test(seg.text)) || /--dry-run(?!=none)/.test(seg.text)) return null
+  const flag = name => {
+    const i = seg.argv.findIndex(a => a === name || a.startsWith(`${name}=`))
+    return i === -1 ? null : seg.argv[i].includes('=') ? seg.argv[i].split('=').slice(1).join('=') : seg.argv[i + 1]
+  }
+  const context = flag('--context') ?? flag('--kube-context') ?? ctx.kubeContext()
+  const namespace = flag('-n') ?? flag('--namespace')
+  const target = [context, namespace].find(v => v && PROD.test(v))
+  return target ? { rule: 'infra', severity: 'critical', detail: `${seg.text.slice(0, 120)} changes the production cluster (${target})` } : null
 }
 
 function checkPatterns(seg) {
@@ -828,6 +860,7 @@ function inspectCommand(command, ctx, depth) {
       checkDelete(seg, ctx) ||
       checkGit(seg, ctx) ||
       checkSecrets(seg, ctx) ||
+      checkCluster(seg, ctx) ||
       checkPatterns(seg) ||
       checkKill(seg) ||
       checkGlobalConfig(seg) ||

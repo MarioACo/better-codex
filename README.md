@@ -62,6 +62,7 @@ What this shows, and what it doesn't:
 - **Fewer requests and less input.** Leaving that task out, input per run went from 139K to 111K tokens (−20%) and requests from 7.7 to 6.1. The biggest saving came in the repo with a slow test suite (−54%).
 - **More uncached input.** The rules, the repo brief and better-codex's notes to Codex are new text that the first requests can't take from the cache: about 3K more uncached tokens per run (11K → 14K). Cached input costs much less than uncached, so the saving on your plan is smaller than the −29%.
 - **A bit slower.** Each hook adds a few hundred milliseconds per tool call, and Codex checks its work before finishing: 57 s → 70 s per run on average.
+- **Two newer tasks** aren't in these results yet: a migration on a table that already has data (graded on adding a new migration that is safe for the existing rows) and a production Dockerfile (pinned image, non-root user, `npm ci`, `.dockerignore`).
 - **A small sample.** One Windows machine, one model, three runs per task. Run it on yours with `node bench/run.mjs`. It uses your Codex quota, and while it runs don't start other Codex sessions: the runs without better-codex hide its rules from them. The raw numbers are in [bench/results](bench/results).
 
 ## Quick start
@@ -111,7 +112,7 @@ Both include a Codex CLI, but it isn't on your `PATH`. Open it in one of these w
 - **Copies better-codex to `~/.codex/better-codex/app/`.** The hooks run from that copy, so you can move or delete the clone, or switch Node versions, and they keep working.
 - **Adds 5 hooks to `~/.codex/hooks.json`.** Your own hooks stay as they are.
 - **Appends a delimited block of rules to `~/.codex/AGENTS.md`.**
-- **Registers the marketplace and installs the `bcx` plugin** (4 skills).
+- **Registers the marketplace and installs the `bcx` plugin** (6 skills).
 
 To update: `npx @marioaco/better-codex@latest install` (in a clone: `git pull`, then `node bin/bcx.js install`). As long as `hooks.json` doesn't change, Codex doesn't ask you to trust the hooks again. To get a `bcx` command you can run from any folder: `npm i -g @marioaco/better-codex` (in a clone: `npm link`).
 
@@ -136,13 +137,13 @@ Hooks only run after you trust them once in `/hooks`. Until then, every one of t
 
 | When | Feature | What it does |
 | --- | --- | --- |
-| Session start | **brief** | Gives Codex the branch, uncommitted changes, stack, test/lint/build commands and repo layout in ~100–350 tokens: what it would otherwise spend tool calls finding out. It also covers shell quirks: on Windows it says to use `npm.cmd`, because PowerShell often blocks `npm.ps1`, and it says when `rg` is missing. It also lists the commands that were slow in this repo last time. The brief comes back after `/compact`. |
-| Every prompt | **boost** | Applies the prompt modes below, adds a short playbook for the kind of task (bug, feature, refactor, tests, review, performance, docs, question; English and Spanish; once per session), and resolves the files you name (`login`, `ReportTable`, `format.ts:12`) to real paths. |
+| Session start | **brief** | Gives Codex the branch, uncommitted changes, stack, test/lint/build commands and repo layout in ~100–350 tokens: what it would otherwise spend tool calls finding out. It also covers shell quirks: on Windows it says to use `npm.cmd`, because PowerShell often blocks `npm.ps1`, and it says when `rg` is missing. It also lists the commands that were slow in this repo last time. For infrastructure and databases it names what the repo has (Dockerfiles, Compose with its Postgres or Redis, Terraform, Kubernetes, Helm, GitHub Actions, Prisma and the migration folders of Drizzle, Alembic, Django, Rails, Laravel, Flyway…) and the checks Codex can run for them with the tools installed on your machine. The brief comes back after `/compact`. |
+| Every prompt | **boost** | Applies the prompt modes below, adds a short playbook for the kind of task (bug, feature, refactor, tests, review, performance, docs, question; English and Spanish; once per session) and one for its area (databases, infrastructure as code, containers and Kubernetes, CI/CD, security, UI), and resolves the files you name (`login`, `ReportTable`, `format.ts:12`) to real paths. |
 | Before each command | **guard** | Stops destructive or hard-to-undo actions until you approve them. See [Safety](#safety). |
 | Before each command | **diet** | Blocks full reads of large lockfiles, build output, binaries and files over 200 KB, and recursive listings that would walk `node_modules`. Tells Codex how to read them instead (`rg -n`, line ranges). |
 | After each command | **slow commands** | Times every command. One that took over 30 s is pointed out to Codex once and remembered for the repo, so next time Codex runs it and waits for it inside one call instead of polling. Live, on a 75 s test run: 5 requests became 2, and input tokens fell 60%. |
 | After each command | **big output** | When an output was huge (over 48 KB), reminds Codex to narrow its next searches. |
-| Before finishing | **verify gate** | If Codex changed code and ran no check after its last edit, sends it back once to run `npm test` (or whatever your project uses). If the last check **failed** and Codex is about to finish without saying so, it sends Codex back to fix it or say plainly that it fails. It reads the failure from the output of node:test, Jest, Vitest, Mocha, pytest, Go, Cargo, tsc, ESLint, Gradle, Maven, .NET, Karma, Angular and npm. |
+| Before finishing | **verify gate** | If Codex changed code and ran no check after its last edit, sends it back once to run `npm test` (or whatever your project uses). If the last check **failed** and Codex is about to finish without saying so, it sends Codex back to fix it or say plainly that it fails. It reads the failure from the output of node:test, Jest, Vitest, Mocha, pytest, Go, Cargo, tsc, ESLint, Gradle, Maven, .NET, Karma, Angular and npm. Infrastructure files get their own check: `terraform validate` for `.tf`, `docker build --check` or hadolint for a Dockerfile, `docker compose config` for Compose, `helm lint`, `kubectl kustomize` or kubeconform, actionlint for workflows, `prisma validate` for the schema. A check is only asked for when its tool is installed. |
 | Before finishing | **meter** | Warns you below the answer when context passes 60% (`/compact`) or 80% (`$bcx:handoff` and a new session), and when your 5-hour or weekly limits pass 75%. |
 
 ### Prompt modes
@@ -164,6 +165,8 @@ The Spanish prefixes work too: `profundo:`, `rapido:`, `pregunta:`.
 | `$bcx:refine` | Turn a vague request into a brief (goal, files, constraints, acceptance criteria, verification), then carry it out. |
 | `$bcx:handoff` | Write `.codex/handoff.md` so you can continue in a fresh, cheap session. The next session's brief points to it. |
 | `$bcx:debug` | Reproduce, isolate, find the root cause, make the minimal fix, add a regression test. |
+| `$bcx:ci` | Fix a failing pipeline from the failed step's log only (`gh run view --log-failed`), reproduce it locally, verify. |
+| `$bcx:migrate` | Change a database schema with a new, reversible migration that is safe on existing data, tested up and down on a local database. |
 
 ## Safety
 
@@ -184,9 +187,9 @@ It stops on:
 - **Deletes git can't undo**: whole folders, uncommitted or untracked files, paths outside the repo, wildcards, targets in variables, `find … -delete`, `shutil.rmtree`, `fs.rmSync(…, {recursive})`. Deleting `node_modules`, caches, logs, or files Codex created this session doesn't ask. Neither do `dist`, `build`, `tmp` and the like, unless git shows uncommitted work of yours inside.
 - **Discarding your uncommitted work**: `reset --hard`, `checkout -- …`, `restore`, `clean -f`, `stash drop`, `worktree remove --force`. If only Codex's own changes from this session would be lost, it doesn't ask.
 - **Git history**: `push --force` (critical on main), `--mirror`, deleting remote branches or tags, `branch -D`, `filter-branch`.
-- **Secrets**: reading `.env`, keys, keystores or credentials (their contents would go to the model), dumping environment variables, overwriting secrets, adding them to git.
+- **Secrets**: reading `.env`, keys, keystores or credentials (their contents would go to the model), including Terraform state and `.tfvars`, kubeconfig, `.pgpass` and Docker's `config.json`; commands that print secret values (`kubectl get secret -o yaml`, `terraform output -json`, `aws secretsmanager get-secret-value`…); dumping environment variables, overwriting secrets, adding them to git.
 - **Databases**: `DROP`, `TRUNCATE`, `DELETE`/`UPDATE` without `WHERE`, `prisma migrate reset`, `migrate:fresh`, `manage.py flush`, `FLUSHALL`…
-- **Infrastructure and publishing**: `terraform destroy`, `kubectl delete`, `docker compose down -v`, `npm publish`, `firebase deploy`, making a repo public…
+- **Infrastructure and publishing**: `terraform destroy`, `terraform state rm`, `kubectl delete`, `docker compose down -v`, `docker push`, `npm publish`, `firebase deploy`, making a repo public… Any `kubectl apply`, `helm upgrade` or `kubectl scale` aimed at production (by `--context`, namespace or your current context) is critical; a `--dry-run` is fine.
 - **Killing programs by name**: `taskkill /IM chrome.exe`, `Stop-Process -Name node` and `pkill java` also close your own windows and servers. Killing by PID doesn't ask.
 - **Your global configuration**: `git config --global …` (your identity), `npm config set`, `setx`, user or machine environment variables.
 - **better-codex's own settings**: Codex running `bcx allow`, `bcx config set guard off` or `bcx uninstall`, or editing its settings, its allow list or `~/.codex/hooks.json`.
@@ -238,7 +241,7 @@ bcx try "+fix the login that crashes"   # what would be added to that prompt
 
 `bcx stats` splits your sessions into before and after installing, and compares input per turn, tools per turn and average context. Everything better-codex does is logged to `~/.codex/better-codex/events.jsonl`.
 
-The fixed cost is about **870 tokens per session**: the rules and the skill descriptions, which get cached. On top of that come the brief and, only when there's something useful to add, ~20–300 tokens per prompt.
+The fixed cost is about **1,060 tokens per session**: the rules and the skill descriptions, which get cached. On top of that come the brief and, only when there's something useful to add, ~20–300 tokens per prompt.
 
 **Tip: plugins you don't use cost tokens too.** The skills of every installed plugin are described to the model in every session. In one real setup, Figma, Notion, Google Drive and Work Pets added about 3,000 tokens per session, and none of them had ever been used. Turning their skills off brought the skills section from ~4,200 to ~1,000 tokens:
 
@@ -329,7 +332,7 @@ This removes the hooks, the `AGENTS.md` block, the marketplace and the installed
 ## Development
 
 ```bash
-npm test                       # 106 tests with node:test, no dependencies
+npm test                       # 111 tests with node:test, no dependencies
 npm run check                  # tests + offline doctor
 node scripts/codex-compat.mjs  # against your real Codex binary: no login, no model calls
 node bench/run.mjs             # the benchmark (uses your Codex quota)

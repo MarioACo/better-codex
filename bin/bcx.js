@@ -434,7 +434,7 @@ const commands = {
   bcx config [set k v|reset]   ${L('ajustes', 'settings')}
   bcx uninstall                ${L('quita todo lo instalado', 'removes everything installed')}
 
-${dim(L('En Codex: +prompt (a fondo) · quick: · ask: · plan: · $bcx:commit · $bcx:refine · $bcx:handoff · $bcx:debug', 'In Codex: +prompt (deep) · quick: · ask: · plan: · $bcx:commit · $bcx:refine · $bcx:handoff · $bcx:debug'))}`)
+${dim(L('En Codex: +prompt (a fondo) · quick: · ask: · plan: · $bcx:commit · $bcx:refine · $bcx:handoff · $bcx:debug · $bcx:ci · $bcx:migrate', 'In Codex: +prompt (deep) · quick: · ask: · plan: · $bcx:commit · $bcx:refine · $bcx:handoff · $bcx:debug · $bcx:ci · $bcx:migrate'))}`)
   }
 }
 

@@ -62,6 +62,7 @@ Qué muestra esto, y qué no:
 - **Menos peticiones y menos entrada.** Sin contar esa tarea, la entrada por corrida bajó de 139K a 111K tokens (−20%) y las peticiones de 7.7 a 6.1. El mayor ahorro fue en el repo con pruebas lentas (−54%).
 - **Más entrada sin caché.** Las reglas, el resumen del repo y los avisos de better-codex a Codex son texto nuevo que las primeras peticiones no pueden tomar de la caché: unos 3K tokens más sin caché por corrida (11K → 14K). La entrada en caché cuesta mucho menos que la que no lo está, así que el ahorro en tu plan es menor que el −29%.
 - **Un poco más lento.** Cada hook suma unos cientos de milisegundos por llamada, y Codex verifica su trabajo antes de terminar: 57 s → 70 s por corrida en promedio.
+- **Dos tareas nuevas** todavía no están en estos resultados: una migración sobre una tabla que ya tiene datos (se califica que agregue una migración nueva y segura para las filas existentes) y un Dockerfile de producción (imagen fijada, usuario sin root, `npm ci`, `.dockerignore`).
 - **Una muestra pequeña.** Una máquina con Windows, un modelo, tres corridas por tarea. Córrelo en la tuya con `node bench/run.mjs`. Gasta cuota de tu Codex, y mientras corre no abras otras sesiones de Codex: las corridas sin better-codex les ocultan sus reglas. Los números crudos están en [bench/results](bench/results).
 
 ## Empieza en un minuto
@@ -111,7 +112,7 @@ Las dos traen un CLI de Codex, pero no está en tu `PATH`. Ábrelo de alguna de 
 - **Copia better-codex a `~/.codex/better-codex/app/`.** Los hooks corren desde esa copia, así que puedes mover o borrar el clon, o cambiar de versión de Node, y siguen funcionando.
 - **Agrega 5 hooks a `~/.codex/hooks.json`.** Los tuyos se quedan como están.
 - **Agrega un bloque delimitado de reglas al final de `~/.codex/AGENTS.md`.**
-- **Registra el marketplace e instala el plugin `bcx`** (4 skills).
+- **Registra el marketplace e instala el plugin `bcx`** (6 skills).
 
 Para actualizar: `npx @marioaco/better-codex@latest install` (en un clon: `git pull` y luego `node bin/bcx.js install`). Mientras `hooks.json` no cambie, Codex no te pide aprobar los hooks de nuevo. Para tener un comando `bcx` que funcione desde cualquier carpeta: `npm i -g @marioaco/better-codex` (en un clon: `npm link`).
 
@@ -136,13 +137,13 @@ Los hooks solo corren después de aprobarlos una vez en `/hooks`. Hasta entonces
 
 | Momento | Función | Qué hace |
 | --- | --- | --- |
-| Al iniciar sesión | **brief** | Le da a Codex la rama, los cambios sin commit, el stack, los comandos de test/lint/build y la estructura del repo en ~100–350 tokens, lo que de otro modo gastaría en llamadas para averiguarlo. También cubre las particularidades de tu terminal: en Windows le dice que use `npm.cmd`, porque PowerShell suele bloquear `npm.ps1`, y le avisa si `rg` no está instalado. También lista los comandos que fueron lentos en este repo la última vez. El brief vuelve a llegar después de `/compact`. |
-| Cada prompt | **boost** | Aplica los modos de abajo, agrega una guía corta según el tipo de tarea (bug, feature, refactor, tests, review, rendimiento, docs, pregunta; en español e inglés; una vez por sesión) y resuelve los archivos que nombras (`login`, `ReportTable`, `format.ts:12`) a rutas reales. |
+| Al iniciar sesión | **brief** | Le da a Codex la rama, los cambios sin commit, el stack, los comandos de test/lint/build y la estructura del repo en ~100–350 tokens, lo que de otro modo gastaría en llamadas para averiguarlo. También cubre las particularidades de tu terminal: en Windows le dice que use `npm.cmd`, porque PowerShell suele bloquear `npm.ps1`, y le avisa si `rg` no está instalado. También lista los comandos que fueron lentos en este repo la última vez. En infraestructura y bases de datos nombra lo que tiene el repo (Dockerfiles, Compose con su Postgres o Redis, Terraform, Kubernetes, Helm, GitHub Actions, Prisma y las carpetas de migraciones de Drizzle, Alembic, Django, Rails, Laravel, Flyway…) y las verificaciones que Codex puede correr con las herramientas instaladas en tu máquina. El brief vuelve a llegar después de `/compact`. |
+| Cada prompt | **boost** | Aplica los modos de abajo, agrega una guía corta según el tipo de tarea (bug, feature, refactor, tests, review, rendimiento, docs, pregunta; en español e inglés; una vez por sesión) y otra según su área (bases de datos, infraestructura como código, contenedores y Kubernetes, CI/CD, seguridad, interfaz), y resuelve los archivos que nombras (`login`, `ReportTable`, `format.ts:12`) a rutas reales. |
 | Antes de cada comando | **guard** | Detiene acciones destructivas o difíciles de deshacer hasta que las apruebes. Ver [Seguridad](#seguridad). |
 | Antes de cada comando | **diet** | Evita leer completos lockfiles grandes, salida de build, binarios y archivos de más de 200 KB, y listados recursivos que recorrerían `node_modules`. Le dice a Codex cómo leerlos en su lugar (`rg -n`, rangos de líneas). |
 | Después de cada comando | **comandos lentos** | Mide cada comando. Si uno tardó más de 30 s, se lo señala a Codex una vez y lo recuerda para ese repo, así la siguiente vez Codex lo corre y lo espera dentro de una sola llamada en vez de preguntar a cada rato. En vivo, con unos tests de 75 s: 5 peticiones bajaron a 2, y los tokens de entrada, un 60%. |
 | Después de cada comando | **big output** | Si una salida fue enorme (más de 48 KB), le recuerda a Codex acotar sus siguientes búsquedas. |
-| Antes de terminar | **verify gate** | Si Codex cambió código y no corrió ninguna verificación después de su último cambio, lo regresa una vez a ejecutar `npm test` (o lo que use tu proyecto). Si la última verificación **falló** y Codex va a terminar sin decirlo, lo regresa a arreglarla o a decir claramente que falla. Reconoce el fallo en la salida de node:test, Jest, Vitest, Mocha, pytest, Go, Cargo, tsc, ESLint, Gradle, Maven, .NET, Karma, Angular y npm. |
+| Antes de terminar | **verify gate** | Si Codex cambió código y no corrió ninguna verificación después de su último cambio, lo regresa una vez a ejecutar `npm test` (o lo que use tu proyecto). Si la última verificación **falló** y Codex va a terminar sin decirlo, lo regresa a arreglarla o a decir claramente que falla. Reconoce el fallo en la salida de node:test, Jest, Vitest, Mocha, pytest, Go, Cargo, tsc, ESLint, Gradle, Maven, .NET, Karma, Angular y npm. Los archivos de infraestructura tienen su propia verificación: `terraform validate` para `.tf`, `docker build --check` o hadolint para un Dockerfile, `docker compose config` para Compose, `helm lint`, `kubectl kustomize` o kubeconform, actionlint para los workflows, `prisma validate` para el schema. Solo la pide si la herramienta está instalada. |
 | Antes de terminar | **meter** | Te avisa debajo de la respuesta cuando el contexto pasa del 60% (`/compact`) o del 80% (`$bcx:handoff` y sesión nueva), y cuando tus límites de 5 horas o semanal pasan del 75%. |
 
 ### Modos de prompt
@@ -164,6 +165,8 @@ Los prefijos en inglés también funcionan: `deep:`, `quick:`, `ask:`.
 | `$bcx:refine` | Convierte un pedido vago en un brief (objetivo, archivos, restricciones, criterios de aceptación, verificación) y luego lo ejecuta. |
 | `$bcx:handoff` | Escribe `.codex/handoff.md` para seguir en una sesión nueva y barata. El brief de la siguiente sesión lo señala. |
 | `$bcx:debug` | Reproduce, aísla, encuentra la causa raíz, hace el arreglo mínimo y agrega una prueba de regresión. |
+| `$bcx:ci` | Arregla un pipeline que falla leyendo solo el log del paso que falló (`gh run view --log-failed`), lo reproduce en local y verifica. |
+| `$bcx:migrate` | Cambia el schema de la base con una migración nueva, reversible y segura con los datos que ya existen, probada de ida y vuelta en una base local. |
 
 ## Seguridad
 
@@ -184,9 +187,9 @@ Se detiene ante:
 - **Borrados que git no puede deshacer**: carpetas completas, archivos sin commit o sin seguimiento, rutas fuera del repo, comodines, destinos en variables, `find … -delete`, `shutil.rmtree`, `fs.rmSync(…, {recursive})`. Borrar `node_modules`, cachés, logs o archivos que Codex creó en esta sesión no pregunta. Tampoco `dist`, `build`, `tmp` y similares, salvo que git muestre trabajo tuyo sin commit dentro.
 - **Descartar tus cambios sin commit**: `reset --hard`, `checkout -- …`, `restore`, `clean -f`, `stash drop`, `worktree remove --force`. Si solo se perderían cambios que hizo el propio Codex en esta sesión, no pregunta.
 - **Historial de git**: `push --force` (crítico en main), `--mirror`, borrar ramas o tags remotos, `branch -D`, `filter-branch`.
-- **Secretos**: leer `.env`, llaves, keystores o credenciales (su contenido se enviaría al modelo), volcar variables de entorno, sobrescribir secretos o agregarlos a git.
+- **Secretos**: leer `.env`, llaves, keystores o credenciales (su contenido se enviaría al modelo), también el estado de Terraform y los `.tfvars`, el kubeconfig, `.pgpass` y el `config.json` de Docker; comandos que imprimen valores secretos (`kubectl get secret -o yaml`, `terraform output -json`, `aws secretsmanager get-secret-value`…); volcar variables de entorno, sobrescribir secretos o agregarlos a git.
 - **Bases de datos**: `DROP`, `TRUNCATE`, `DELETE`/`UPDATE` sin `WHERE`, `prisma migrate reset`, `migrate:fresh`, `manage.py flush`, `FLUSHALL`…
-- **Infraestructura y publicación**: `terraform destroy`, `kubectl delete`, `docker compose down -v`, `npm publish`, `firebase deploy`, hacer público un repo…
+- **Infraestructura y publicación**: `terraform destroy`, `terraform state rm`, `kubectl delete`, `docker compose down -v`, `docker push`, `npm publish`, `firebase deploy`, hacer público un repo… Cualquier `kubectl apply`, `helm upgrade` o `kubectl scale` dirigido a producción (por `--context`, namespace o tu contexto actual) es crítico; un `--dry-run` no pregunta.
 - **Cerrar programas por nombre**: `taskkill /IM chrome.exe`, `Stop-Process -Name node` y `pkill java` también cierran tus propias ventanas y servidores. Cerrar por PID no pregunta.
 - **Tu configuración global**: `git config --global …` (tu identidad), `npm config set`, `setx`, variables de entorno de usuario o de máquina.
 - **La configuración de better-codex**: que Codex ejecute `bcx allow`, `bcx config set guard off` o `bcx uninstall`, o que edite su configuración, su lista de permisos o `~/.codex/hooks.json`.
@@ -238,7 +241,7 @@ bcx try "+arregla el login que truena"   # lo que se agregaría a ese prompt
 
 `bcx stats` separa tus sesiones en antes y después de instalar, y compara la entrada por turno, las herramientas por turno y el contexto medio. Todo lo que hace better-codex queda registrado en `~/.codex/better-codex/events.jsonl`.
 
-El costo fijo es de unos **870 tokens por sesión**: las reglas y la descripción de los skills, que se guardan en caché. A eso se suman el brief y, solo cuando hay algo útil que agregar, ~20–300 tokens por prompt.
+El costo fijo es de unos **1,060 tokens por sesión**: las reglas y la descripción de los skills, que se guardan en caché. A eso se suman el brief y, solo cuando hay algo útil que agregar, ~20–300 tokens por prompt.
 
 **Consejo: los plugins que no usas también cuestan tokens.** Los skills de cada plugin instalado se le describen al modelo en cada sesión. En una instalación real, Figma, Notion, Google Drive y Work Pets sumaban unos 3,000 tokens por sesión, y ninguno se había usado nunca. Al apagar sus skills, la sección de skills bajó de ~4,200 a ~1,000 tokens:
 
@@ -329,7 +332,7 @@ Quita los hooks, el bloque de `AGENTS.md`, el marketplace y la copia instalada, 
 ## Desarrollo
 
 ```bash
-npm test                       # 106 pruebas con node:test, sin dependencias
+npm test                       # 111 pruebas con node:test, sin dependencias
 npm run check                  # pruebas + doctor sin red
 node scripts/codex-compat.mjs  # contra tu binario real de Codex: sin login ni llamadas al modelo
 node bench/run.mjs             # el benchmark (gasta cuota de tu Codex)

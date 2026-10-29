@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { dietCheck } from '../src/diet.js'
 import { freshState } from '../src/state.js'
-import { failureOf, gateReason, trackTool } from '../src/verify.js'
+import { failureOf, gate, gateReason, trackTool } from '../src/verify.js'
 import { tempDir, write } from './helpers.js'
 
 const diet = (command, cwd, extra = {}) => dietCheck({ toolName: 'Bash', toolInput: { command }, cwd, ...extra })?.rule ?? null
@@ -144,4 +144,48 @@ test('verify gate: a check that ran but failed sends Codex back once to fix or e
   const look = freshState()
   trackTool(look, { toolName: 'Bash', toolInput: { command: 'npm test' }, cwd: '/r', output: 'ℹ fail 1\n' })
   assert.equal(gateReason(look, project), null)
+})
+
+// Programs "installed" for a test: empty files on a PATH of their own.
+function withTools(names, fn) {
+  const dir = tempDir('bcx-bin-')
+  write(dir, Object.fromEntries(names.map(name => [name, ''])))
+  const saved = process.env.PATH
+  process.env.PATH = dir
+  try {
+    return fn()
+  } finally {
+    process.env.PATH = saved
+  }
+}
+const patch = path => ({ toolName: 'apply_patch', toolInput: { command: `*** Begin Patch\n*** Update File: ${path}\n*** End Patch` } })
+
+test('verify gate: infra files get their own check (terraform, compose, prisma), only when the tool is installed', () => {
+  const root = tempDir()
+  write(root, { 'infra/main.tf': 'terraform {}\n', 'docker-compose.yml': 'services: {}\n', 'prisma/schema.prisma': '' })
+  withTools(['terraform', 'docker'], () => {
+    const state = freshState()
+    trackTool(state, { ...patch('infra/main.tf'), cwd: root })
+    trackTool(state, { ...patch('docker-compose.yml'), cwd: root })
+    const sent = gate(state, { verify: 'npm test' })
+    assert.deepEqual(sent.checks, ['docker compose -f docker-compose.yml config -q', 'terraform fmt -check -recursive && terraform -chdir=infra validate'])
+    assert.match(sent.reason, /Terraform files \(infra\/main\.tf\)[\s\S]*terraform init -backend=false[\s\S]*Do not plan against, apply to or deploy/)
+
+    trackTool(state, { toolName: 'Bash', toolInput: { command: 'terraform -chdir=infra validate' }, cwd: root, output: '╷\n│ Error: Unsupported argument\n│\n╵\n' })
+    trackTool(state, { toolName: 'Bash', toolInput: { command: 'docker compose config -q' }, cwd: root, output: '' })
+    assert.match(gateReason(state, {}), /The Terraform check failed: "│ Error: Unsupported argument"/)
+    state.lastAnswer = 'terraform validate still fails: the provider block needs a region.'
+    assert.equal(gateReason(state, {}), null) // it said so: no extra request
+    trackTool(state, { toolName: 'Bash', toolInput: { command: 'terraform validate' }, cwd: root, output: 'Success! The configuration is valid.\n' })
+    state.lastAnswer = ''
+    assert.equal(gateReason(state, {}), null)
+  })
+  // not installed: Codex couldn't run it either
+  withTools([], () => {
+    const state = freshState()
+    trackTool(state, { ...patch('infra/main.tf'), cwd: root })
+    assert.equal(gateReason(state, {}), null)
+    trackTool(state, { ...patch('prisma/schema.prisma'), cwd: root })
+    assert.match(gateReason(state, {}), /Prisma files[\s\S]*`npx prisma validate`/) // npx comes with Node
+  })
 })
