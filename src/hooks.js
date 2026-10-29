@@ -12,6 +12,7 @@ import { extractWorkdir, toolCommands } from './shell.js'
 import { duration, rememberSlow, SLOW_SECONDS } from './slow.js'
 import { loadState, pruneStates, saveState } from './state.js'
 import { readUsage } from './transcript.js'
+import { backup, canBackup, summary } from './undo.js'
 import { dataDir } from './paths.js'
 import { clip, estimateTokens, writeJson } from './util.js'
 import { gateReason, trackTool } from './verify.js'
@@ -145,7 +146,17 @@ function onPreToolUse(input, cfg, cwd) {
       const thisTurn = guard.approvedTurn === '*' || guard.approvedTurn === input.turn_id
       const via = !thisTurn ? null : guard.approved.some(a => sameAction(a, found)) ? 'block' : askedFor(found, guard.asked, workdir) ? 'question' : null
       if (via) {
-        record('guard-allowed', { rule: found.rule, via, command: found.command.slice(0, 160) })
+        // A copy of what it can destroy, once per action and turn (Codex may retry the same command).
+        const key = `${input.turn_id}|${found.rule}|${found.detail}`
+        const saved = cfg.undo && !guard.saved?.includes(key) ? safely(() => backup(found, { session: input.session_id })) : null
+        if (saved) {
+          guard.saved = [...(guard.saved || []), key].slice(-10)
+          saveState(input.session_id, state)
+        }
+        record('guard-allowed', { rule: found.rule, via, command: found.command.slice(0, 160), ...(saved?.id && { undo: saved.id }), ...(saved?.skipped && { undoSkipped: saved.skipped }) })
+        const lang = resolveLang(cfg.lang)
+        if (saved?.id) return { systemMessage: `better-codex: ${pick(lang, 'copia guardada antes de ejecutarlo', 'saved a copy before running it')}: ${summary(saved, lang)}. ${pick(lang, 'Para deshacerlo', 'To undo it')}: bcx undo` }
+        if (saved?.skipped) return { systemMessage: `better-codex: ${pick(lang, 'no guardé copia', 'no copy saved')} (${saved.skipped}).` }
         return null
       }
       guard.pending = [
@@ -154,7 +165,7 @@ function onPreToolUse(input, cfg, cwd) {
       ].slice(-5)
       saveState(input.session_id, state)
       record('guard-blocked', { rule: found.rule, severity: found.severity, command: found.command.slice(0, 160) })
-      return deny(denyReason(found))
+      return deny(denyReason(found, { undo: cfg.undo && safely(() => canBackup(found), false) }))
     }
   }
 

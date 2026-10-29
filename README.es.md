@@ -12,7 +12,7 @@ Hooks, skills y métricas para que usar [OpenAI Codex](https://developers.openai
 
 - **Gasta menos tokens.** Codex arranca cada sesión sabiendo cómo es tu repo, no lee completos los lockfiles, la salida de build ni `node_modules`, y te avisa antes de que una sesión se vuelva cara.
 - **Responde mejor.** Cada prompt recibe una guía corta para su tipo de tarea, los archivos que mencionas se resuelven a rutas reales, y Codex no termina sin verificar el código que cambió.
-- **Es más seguro.** Antes de algo destructivo (borrar archivos, descartar cambios sin commit, `push --force`, `DROP TABLE`, deploys, secretos), Codex se detiene y te dice qué quiere ejecutar, por qué, qué se puede perder y qué alternativa más segura hay. Solo sigue si respondes que sí.
+- **Es más seguro.** Antes de algo destructivo (borrar archivos, descartar cambios sin commit, `push --force`, `DROP TABLE`, deploys, secretos), Codex se detiene y te dice qué quiere ejecutar, por qué, qué se puede perder y qué alternativa más segura hay. Solo sigue si respondes que sí, y antes guarda una copia para que `bcx undo` pueda regresar todo.
 
 Todo corre en tu máquina, sin dependencias y sin conexiones a internet. Inspirado en [better-claude](https://github.com/midudev/better-claude).
 
@@ -199,6 +199,13 @@ Se detiene ante:
 - «Sí, pero…», «espera» o cualquier otra respuesta cancelan la aprobación.
 - Casi siempre Codex pregunta por su cuenta, antes de que el guard tenga que intervenir, porque las reglas de better-codex se lo piden. Un «sí» a esa pregunta también cuenta, así que no confirmas dos veces. Solo cubre lo que la pregunta mostraba: el comando exacto, o las rutas exactas que nombró para ese tipo de acción.
 
+**Deshacer.** Antes de que corra una acción que aprobaste, better-codex guarda una copia de lo que puede destruir:
+
+- los archivos que borra o sobrescribe (sin `node_modules` ni cachés, hasta 100 MB);
+- en comandos de git, tus cambios sin commit, también los archivos sin seguimiento, y todas las ramas y el stash, como un commit en `refs/bcx/undo/`. Lee a través de una copia de tu índice, así que nunca toca el tuyo.
+
+Codex lo menciona al preguntar, y una línea lo confirma ya guardado. `bcx undo` lista las copias y `bcx undo 1` regresa la más reciente. También vuelven las ramas borradas y los stash descartados, y una rama que movió `reset --hard` vuelve a donde estaba. Nunca reemplaza un archivo que ya existe otra vez, salvo con `--overwrite`, y aun así guarda antes el actual. También guarda cómo estaba todo antes de deshacer, así que deshacer también se puede deshacer. Conserva las últimas 20 copias de los últimos 14 días. Las bases de datos, los deploys y lo que un push ya envió no se pueden copiar; después de un push forzado muestra el comando que regresa la rama remota.
+
 Para ver el guard en acción:
 
 - `bcx guard "git reset --hard"` revisa un comando suelto;
@@ -214,6 +221,7 @@ bcx stats     # tokens, caché, contexto medio y pico, herramientas por turno, p
 bcx usage     # tus límites de 5 horas y semanal, y cuándo se reinician
 bcx audit     # repasa sesiones pasadas: qué habría detenido el guard y qué habría ahorrado la dieta
 bcx log       # lo último que hizo better-codex: bloqueos, aprobaciones, lecturas evitadas, verificaciones pedidas
+bcx undo      # las copias guardadas antes de cada acción que aprobaste; bcx undo 1 regresa la más reciente
 bcx doctor    # revisión de la instalación, lo que dice el propio Codex de los hooks (cargados, aprobados), hooks ejecutados en tus terminales, y lo que Codex ha enviado de verdad
 bcx brief     # el brief que recibe Codex en este repo, y su costo en tokens
 bcx try "+arregla el login que truena"   # lo que se agregaría a ese prompt
@@ -246,6 +254,7 @@ bcx config reset
 | Clave | Por defecto | Qué controla |
 | --- | --- | --- |
 | `guard` | `true` | Preguntar antes de acciones destructivas |
+| `undo` | `true` | Una copia de lo que una acción aprobada puede destruir, antes de que corra (`bcx undo`) |
 | `brief` | `true` | Brief del repo al iniciar sesión |
 | `boost` / `hints` | `true` | Modos y guías por prompt / rutas sugeridas |
 | `diet` / `dietMaxKB` | `true` / `200` | Lecturas inútiles / tamaño máximo de una lectura completa |
@@ -311,7 +320,7 @@ Quita los hooks, el bloque de `AGENTS.md`, el marketplace y la copia instalada, 
 ## Desarrollo
 
 ```bash
-npm test                       # 97 pruebas con node:test, sin dependencias
+npm test                       # 101 pruebas con node:test, sin dependencias
 npm run check                  # pruebas + doctor sin red
 node scripts/codex-compat.mjs  # contra tu binario real de Codex: sin login ni llamadas al modelo
 node bench/run.mjs             # el benchmark (gasta cuota de tu Codex)

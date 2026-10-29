@@ -25,6 +25,7 @@ Todo corre en tu máquina, y better-codex no hace llamadas de red. Guarda su est
 
 - **Estado por sesión**: el último prompt que enviaste y la última respuesta de Codex. Sirve para ligar un «sí» a la pregunta que responde, y se borra a los 7 días.
 - **Tus perfiles de terminal** (perfil de PowerShell, `.bashrc`, `.zshrc` y los archivos que cargan dentro de tu carpeta personal) se leen como texto para expandir tus alias. Nada de ellos se ejecuta ni se guarda. En Windows recuerda dónde está tu carpeta Documentos (`shell.json`).
+- **Copias para `bcx undo`**: antes de una acción que aprobaste, los archivos que borraría o sobrescribiría van a `~/.codex/better-codex/undo/`, y eso puede incluir un `.env`. En comandos de git, la foto también se guarda como objetos de git en `refs/bcx/undo/` dentro de tu repo. Se quedan en tu máquina: `git push` no envía esas referencias, pero `git push --mirror` sí lo haría, y el guard pregunta antes. Solo se conservan las últimas 20 copias de los últimos 14 días. `bcx config set undo off` lo apaga.
 - **Métricas** (`events.jsonl`): no guardan prompts. Sí registran los comandos que el guard detuvo o permitió y las rutas que la dieta evitó leer, recortados a 160 caracteres. El archivo rota al llegar a 2 MB, y `BCX_NO_METRICS=1` apaga las métricas.
 
 ## Versiones con soporte

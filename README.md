@@ -12,7 +12,7 @@ Hooks, skills and metrics that make [OpenAI Codex](https://developers.openai.com
 
 - **Fewer tokens.** Codex starts each session already knowing your repo, skips lockfiles, build output and `node_modules`, and tells you before a session gets expensive.
 - **Better answers.** Each prompt gets short guidance for its kind of task, the files you mention are resolved to real paths, and Codex doesn't finish without checking the code it changed.
-- **Safer.** Before anything destructive (deleting files, discarding uncommitted work, `push --force`, `DROP TABLE`, deploys, secrets), Codex stops and tells you what it wants to run, why, what could be lost, and a safer alternative. It only goes ahead if you say yes.
+- **Safer.** Before anything destructive (deleting files, discarding uncommitted work, `push --force`, `DROP TABLE`, deploys, secrets), Codex stops and tells you what it wants to run, why, what could be lost, and a safer alternative. It only goes ahead if you say yes, and it saves a copy first so `bcx undo` can put things back.
 
 Everything runs on your machine, with no dependencies and no network calls. Inspired by [better-claude](https://github.com/midudev/better-claude).
 
@@ -199,6 +199,13 @@ It stops on:
 - "Yes, but…", "wait", or any other reply cancels the approval.
 - Codex usually asks on its own, before the guard has to step in, because better-codex's rules tell it to. A yes to that question counts too, so you don't confirm twice. It covers only what the question showed: the exact command, or the exact paths it named for that kind of action.
 
+**Undo.** Before an action you approved runs, better-codex saves a copy of what it can destroy:
+
+- the files it deletes or overwrites (without `node_modules` and caches, up to 100 MB);
+- for git commands, your uncommitted work, untracked files included, and every branch and stash, as a commit under `refs/bcx/undo/`. It reads through a copy of your index, so it never touches yours.
+
+Codex mentions it when it asks, and a line confirms it once saved. `bcx undo` lists the copies, and `bcx undo 1` puts the newest back. Deleted branches and dropped stashes come back too, and a branch moved by `reset --hard` goes back where it was. It never replaces a file that exists again unless you add `--overwrite`, and even then it saves the current one first. The state before undoing is saved as well, so an undo can be undone. It keeps the last 20 copies from the last 14 days. Databases, deploys and what a push already sent can't be copied; after a force push it prints the command that puts the remote branch back.
+
 To see the guard at work:
 
 - `bcx guard "git reset --hard"` checks a single command;
@@ -214,6 +221,7 @@ bcx stats     # tokens, cache, average/peak context, tools per turn, share spent
 bcx usage     # your 5-hour and weekly limits, and when they reset
 bcx audit     # replays past sessions: what the guard would have stopped, what the diet would have saved
 bcx log       # what better-codex did lately: blocks, approvals, skipped reads, verifications it asked for
+bcx undo      # the copies saved before each action you approved; bcx undo 1 restores the newest
 bcx doctor    # install checks, what Codex itself says about the hooks (loaded, trusted), hooks run through your shells, and what Codex has actually sent
 bcx brief     # the brief Codex gets in this repo, and its token cost
 bcx try "+fix the login that crashes"   # what would be added to that prompt
@@ -246,6 +254,7 @@ bcx config reset
 | Key | Default | Controls |
 | --- | --- | --- |
 | `guard` | `true` | Asking before destructive actions |
+| `undo` | `true` | A copy of what an approved action can destroy, before it runs (`bcx undo`) |
 | `brief` | `true` | Repo brief at session start |
 | `boost` / `hints` | `true` | Modes and playbooks per prompt / suggested paths |
 | `diet` / `dietMaxKB` | `true` / `200` | Wasteful reads / largest full read |
@@ -311,7 +320,7 @@ This removes the hooks, the `AGENTS.md` block, the marketplace and the installed
 ## Development
 
 ```bash
-npm test                       # 97 tests with node:test, no dependencies
+npm test                       # 101 tests with node:test, no dependencies
 npm run check                  # tests + offline doctor
 node scripts/codex-compat.mjs  # against your real Codex binary: no login, no model calls
 node bench/run.mjs             # the benchmark (uses your Codex quota)

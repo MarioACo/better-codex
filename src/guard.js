@@ -120,9 +120,10 @@ export const isSecretPath = path => SECRET.test(String(path).replace(/["']/g, ''
 // Folders and files that only an install, a build or a tool writes: deleting them loses nothing.
 // .git/refs/codex/ holds Codex's own turn-diff snapshots.
 const GENERATED = /(^|[\\/])(node_modules|coverage|\.next|\.nuxt|\.svelte-kit|\.angular|\.turbo|\.cache|\.parcel-cache|__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache|\.gradle|\.expo|DerivedData|[^\\/]*\.(log|tmp|pyc|tsbuildinfo)|\.DS_Store)[\\/]?$|(^|[\\/])\.git[\\/]refs[\\/]codex([\\/]|$)/i
+export const isGenerated = path => GENERATED.test(path)
 // Usual names for build output and scratch space, which people also use for their own files
 // (tmp/meeting-notes.md): fine to delete only when git shows nothing of yours inside (ctx.disposable).
-const SCRATCH = /(^|[\\/])(dist|build|out|target|obj|tmp|temp|\.tmp)[\\/]?$/i
+const SCRATCH =/(^|[\\/])(dist|build|out|target|obj|tmp|temp|\.tmp)[\\/]?$/i
 const EVERYTHING = /^(\/|[a-z]:[\\/]?|~[\\/]?|\$home[\\/]?|\$env:userprofile[\\/]?|%userprofile%[\\/]?|\*|\.[\\/]?\*?|\.\.[\\/]?\*?|\.git[\\/]?)$/i
 
 const DELETE_VERBS = new Set(['rm', 'del', 'erase', 'rd', 'rmdir', 'remove-item', 'ri', 'unlink', 'shred', 'rimraf', 'trash'])
@@ -300,7 +301,7 @@ function checkFind(seg, ctx) {
   const nameFlag = a.findIndex(x => /^-i?name$/.test(x))
   const name = nameFlag === -1 ? null : a[nameFlag + 1]
   if (ctx.disposable(start) || (name && ctx.disposableName(name, start)) || ctx.isCreated(ctx.abs(start))) return null
-  return { rule: 'delete', severity: 'high', detail: `find deletes${name ? ` every ${name}` : ' everything it matches'} under ${start}` }
+  return { rule: 'delete', severity: 'high', detail: `find deletes${name ? ` every ${name}` : ' everything it matches'} under ${start}`, save: { paths: [ctx.abs(start)] } }
 }
 
 function checkDelete(seg, ctx) {
@@ -329,7 +330,7 @@ function checkDelete(seg, ctx) {
     const listed = seg.source ? pathArgs(seg.source.argv).filter(a => !/^(ls-files|status|diff)$/.test(a)) : []
     if (listed.length && listed.every(t => ctx.disposable(t) || ctx.isCreated(ctx.abs(t)) || (!ctx.inside(ctx.abs(t)) && inTemp(ctx.abs(t))))) return null
     const from = seg.source ? `\`${seg.source.text.slice(0, 120)}\`` : 'the previous command'
-    return { rule: 'delete', severity: 'high', detail: `deletes whatever ${from} lists${recursive ? ', recursively' : ''}` }
+    return { rule: 'delete', severity: 'high', detail: `deletes whatever ${from} lists${recursive ? ', recursively' : ''}`, save: { git: ctx.cwd } }
   }
 
   const risky = []
@@ -354,7 +355,10 @@ function checkDelete(seg, ctx) {
     risky.push(target)
   }
   if (!risky.length) return null
-  return { rule: 'delete', severity: critical ? 'critical' : 'high', detail: `deletes ${risky.map(describe).join(', ')}${recursive ? ' recursively' : ''}` }
+  // What to copy first if you approve: the literal paths; a variable or wildcard leaves only git to save.
+  const literal = risky.filter(t => !/[$%*?]/.test(t))
+  const save = { paths: literal.map(ctx.abs), ...(literal.length < risky.length && { git: ctx.cwd }) }
+  return { rule: 'delete', severity: critical ? 'critical' : 'high', detail: `deletes ${risky.map(describe).join(', ')}${recursive ? ' recursively' : ''}`, save }
 }
 
 function gitArgs(argv) {
@@ -369,7 +373,8 @@ function checkGit(seg, ctx) {
   const { sub, rest } = gitArgs(seg.argv)
   const flags = rest.filter(a => a.startsWith('-'))
   const has = re => flags.some(f => re.test(f))
-  const hit = (rule, detail, severity = 'high') => ({ rule, severity, detail })
+  // If you approve, the repo is saved first (uncommitted work and every branch tip) so bcx undo can bring it back.
+  const hit = (rule, detail, severity = 'high', save = { git: ctx.cwd }) => ({ rule, severity, detail, save })
   // Reverting only what Codex itself changed this session is fine; your uncommitted work is not.
   const lost = (paths, options) => {
     const files = ctx.protectedChanges(paths, options)
@@ -397,13 +402,15 @@ function checkGit(seg, ctx) {
     if (files) return hit('git-discard', `${seg.text} discards uncommitted changes${files}`)
   }
   if (sub === 'clean' && has(/^-[a-z]*f|^--force$/) && !has(/^-[a-z]*n|^--dry-run$/)) {
-    if (has(/^-[a-z]*x|^-X$/)) return hit('git-discard', `${seg.text} also deletes ignored files such as .env and local config`, 'critical')
+    const clean = { clean: { cwd: ctx.cwd, argv: seg.argv } }
+    if (has(/^-[a-z]*x|^-X$/)) return hit('git-discard', `${seg.text} also deletes ignored files such as .env and local config`, 'critical', clean)
     const files = lost(rest.filter(a => !a.startsWith('-')), { untrackedOnly: true })
-    if (files) return hit('git-discard', `${seg.text} deletes untracked files, which git cannot restore${files}`)
+    if (files) return hit('git-discard', `${seg.text} deletes untracked files, which git cannot restore${files}`, 'high', clean)
   }
   if (sub === 'stash' && /^(drop|clear)$/i.test(rest[0] || '')) return hit('git-discard', `git stash ${rest[0]} deletes stashed work`)
   if (sub === 'worktree' && rest[0] === 'remove' && has(/^(-f|--force)$/)) {
-    return hit('git-discard', `${seg.text} deletes a worktree with its uncommitted changes`)
+    const path = rest.slice(1).find(a => !a.startsWith('-'))
+    return hit('git-discard', `${seg.text} deletes a worktree with its uncommitted changes`, 'high', path ? { paths: [ctx.abs(path)] } : undefined)
   }
   if (sub === 'push') {
     const target = rest.filter(a => !a.startsWith('-')).join(' ')
@@ -424,15 +431,15 @@ function checkGit(seg, ctx) {
   }
   if (sub === 'add') {
     const named = rest.filter(a => !a.startsWith('-'))
-    if (named.some(isSecretPath)) return hit('git-secrets', `stages ${named.filter(isSecretPath).join(', ')}`)
+    if (named.some(isSecretPath)) return hit('git-secrets', `stages ${named.filter(isSecretPath).join(', ')}`, 'high', null)
     if (named.includes('.') || named.includes('*') || has(/^(-A|--all|-u)$/) || !named.length) {
       const secrets = [...ctx.status()].filter(([path, code]) => code === '??' && isSecretPath(path)).map(([path]) => path)
-      if (secrets.length) return hit('git-secrets', `would stage ${secrets.join(', ')} (not in .gitignore)`)
+      if (secrets.length) return hit('git-secrets', `would stage ${secrets.join(', ')} (not in .gitignore)`, 'high', null)
     }
   }
   if (sub === 'commit' && has(/^(-a|--all|-am)$/)) {
     const secrets = [...ctx.status()].filter(([path, code]) => code !== '??' && isSecretPath(path)).map(([path]) => path)
-    if (secrets.length) return hit('git-secrets', `commits changes to ${secrets.join(', ')}`)
+    if (secrets.length) return hit('git-secrets', `commits changes to ${secrets.join(', ')}`, 'high', null)
   }
   return null
 }
@@ -447,14 +454,14 @@ function checkSecrets(seg, ctx) {
     const args = pathArgs(seg.argv)
     const dest = args[args.length - 1]
     if (args.length >= 2 && isSecretPath(dest) && existsSync(ctx.abs(dest))) {
-      return { rule: 'secrets-write', severity: 'high', detail: `${seg.verb} over the existing ${dest}` }
+      return { rule: 'secrets-write', severity: 'high', detail: `${seg.verb} over the existing ${dest}`, save: { paths: [ctx.abs(dest)] } }
     }
   }
   if ((/^(printenv|env)$/.test(seg.verb) && seg.argv.length === 1) || /^(get-childitem|gci|dir|ls)\s+env:\\?\s*$/i.test(seg.text) || (seg.verb === 'set' && seg.argv.length === 1)) {
     return { rule: 'secrets-read', severity: 'high', detail: `${seg.text} prints every environment variable, tokens included` }
   }
   const written = shellWrites(seg.text).filter(isSecretPath)
-  if (written.length) return { rule: 'secrets-write', severity: 'high', detail: `writes ${written.join(', ')}` }
+  if (written.length) return { rule: 'secrets-write', severity: 'high', detail: `writes ${written.join(', ')}`, save: { paths: written.map(ctx.abs) } }
   return null
 }
 
@@ -471,13 +478,13 @@ function checkPatch(toolInput, ctx) {
   const files = patchFiles(toolInput)
   const deleted = files.filter(f => f.op === 'delete')
   const secrets = files.filter(f => f.op !== 'add' && isSecretPath(f.path))
-  if (secrets.length) return { rule: 'secrets-write', severity: 'high', detail: `edits ${secrets.map(f => f.path).join(', ')}` }
+  if (secrets.length) return { rule: 'secrets-write', severity: 'high', detail: `edits ${secrets.map(f => f.path).join(', ')}`, save: { paths: secrets.map(f => ctx.abs(f.path)) } }
   const lost = deleted.filter(f => {
     const abs = ctx.abs(f.path)
     return !ctx.disposable(f.path) && !ctx.isCreated(abs) && !ctx.recoverable(abs)
   })
-  if (lost.length) return { rule: 'delete', severity: 'high', detail: `deletes ${lost.map(f => f.path).join(', ')} (uncommitted or untracked: git cannot restore it)` }
-  if (deleted.length >= 10) return { rule: 'delete', severity: 'high', detail: `deletes ${deleted.length} files in one patch` }
+  if (lost.length) return { rule: 'delete', severity: 'high', detail: `deletes ${lost.map(f => f.path).join(', ')} (uncommitted or untracked: git cannot restore it)`, save: { paths: lost.map(f => ctx.abs(f.path)) } }
+  if (deleted.length >= 10) return { rule: 'delete', severity: 'high', detail: `deletes ${deleted.length} files in one patch`, save: { paths: deleted.map(f => ctx.abs(f.path)) } }
   return null
 }
 
@@ -632,7 +639,7 @@ const FETCH = /^(curl|wget|iwr|invoke-webrequest|irm|invoke-restmethod)$/
 const RUNS_OUTPUT = /(?:\b(?:eval|iex|invoke-expression)|\b(?:sh|bash|zsh|dash|ksh)(?:\.exe)?(?:\s+-\w+)*\s+-c)\s+["']?\$(?=\()|(?:^|[\s;&|(])(?:source|\.|sh|bash|zsh)\s+<(?=\()/gi
 const RUNS_VARIABLE = /\b(?:sh|bash|zsh|dash|ksh)(?:\.exe)?(?:\s+-\w+)*\s+-c\s+["']?\$\{?\w+\}?["']?(?:\s|$)/i
 const show = text => clip(String(text).replace(/\s+/g, ' ').trim(), 80)
-const hidden = (ctx, detail) => (ctx.reading ? null : { rule: 'hidden', severity: 'high', detail })
+const hidden = (ctx, detail) => (ctx.reading ? null : { rule: 'hidden', severity: 'high', detail, save: { git: ctx.cwd } })
 const ownCode = (ctx, fn) => {
   ctx.reading++
   try {
@@ -777,13 +784,15 @@ export function inspect({ toolName, toolInput, cwd, created = [], touched = [], 
 // Same risk, same target: Codex may retry with other flags or syntax (rm -rf x / Remove-Item -Recurse x).
 export const sameAction = (a, b) => a.rule === b.rule && a.detail === b.detail
 
-export function denyReason(found) {
+// undo: better-codex will save a copy first if the user approves (src/undo.js), so the question can say so.
+export function denyReason(found, { undo = false } = {}) {
   const rule = RULES[found.rule]
   return [
     `[better-codex guard] BLOCKED (${found.severity}): ${rule.title.en} — ${found.detail}.`,
     `Risk: ${rule.risk.en}.`,
     'Do not run it and do not work around this block with an equivalent command. First ask the user, in their language and briefly:',
     `1) the exact command and what it will do, 2) why their request needs it, 3) what could be lost or affected, 4) a safer alternative (${rule.safer}).`,
+    ...(undo ? ['If they approve, better-codex saves a copy of what it can destroy first, and `bcx undo` puts it back: tell them.'] : []),
     'Show the command with literal paths (no variables). Then end your turn and wait. If the user approves in their next message, that exact command is allowed once.'
   ].join('\n')
 }

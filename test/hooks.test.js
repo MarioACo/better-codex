@@ -40,7 +40,7 @@ test('guard: stop → explain → yes → allowed once → asks again next turn'
   handle('UserPromptSubmit', { session_id: sid, turn_id: 't1', cwd: root, prompt: 'sube los cambios aunque haya conflicto' }, cfg)
   const blocked = pre('t1')
   assert.equal(blocked.hookSpecificOutput.permissionDecision, 'deny')
-  assert.match(blocked.hookSpecificOutput.permissionDecisionReason, /why their request needs it/)
+  assert.match(blocked.hookSpecificOutput.permissionDecisionReason, /why their request needs it[\s\S]*`bcx undo` puts it back/)
 
   const stop = handle('Stop', { session_id: sid, turn_id: 't1', cwd: root, stop_hook_active: false }, cfg)
   assert.match(stop.systemMessage, /better-codex detuvo: Reescribir o borrar historial de git[\s\S]*Responde «sí»/)
@@ -48,8 +48,11 @@ test('guard: stop → explain → yes → allowed once → asks again next turn'
 
   const approval = handle('UserPromptSubmit', { session_id: sid, turn_id: 't2', cwd: root, prompt: 'sí, hazlo' }, cfg)
   assert.match(contextOf(approval), /The user approved, for this turn only/)
-  assert.equal(pre('t2'), null)
-  assert.equal(pre('t2'), null) // a retry in the same turn
+  const allowed = pre('t2')
+  assert.equal(allowed.hookSpecificOutput, undefined)
+  assert.match(allowed.systemMessage, /copia guardada antes de ejecutarlo: las ramas y el stash del repo\. Para deshacerlo: bcx undo/)
+  assert.equal(pre('t2'), null) // a retry in the same turn, and no second copy
+  assert.ok(readEvents().find(e => e.kind === 'guard-allowed').undo)
 
   handle('UserPromptSubmit', { session_id: sid, turn_id: 't3', cwd: root, prompt: 'ahora otra cosa' }, cfg)
   assert.equal(pre('t3').hookSpecificOutput.permissionDecision, 'deny')
@@ -64,7 +67,7 @@ test('guard: a yes approves that action, not every action of its kind', () => {
   handle('UserPromptSubmit', { session_id: sid, turn_id: 't1', cwd: root, prompt: 'borra la carpeta src vieja' }, cfg)
   pre('t1', 'rm -rf src')
   handle('UserPromptSubmit', { session_id: sid, turn_id: 't2', cwd: root, prompt: 'sí' }, cfg)
-  assert.equal(pre('t2', 'Remove-Item -Recurse -Force src'), null) // same action, other syntax
+  assert.match(pre('t2', 'Remove-Item -Recurse -Force src').systemMessage, /src \(1 archivo, 1 B\)/) // same action, other syntax
   assert.equal(pre('t2', 'rm -rf docs').hookSpecificOutput.permissionDecision, 'deny')
 })
 
@@ -130,6 +133,14 @@ test('every feature can be turned off', () => {
   assert.equal(handle('UserPromptSubmit', { session_id: sid, turn_id: 't1', cwd: root, prompt: '+arregla todo el login' }, off), null)
   assert.equal(handle('PreToolUse', { session_id: sid, turn_id: 't1', cwd: root, tool_name: 'Bash', tool_input: { command: 'rm -rf src' } }, off), null)
   assert.equal(handle('Stop', { session_id: sid, turn_id: 't1', cwd: root, stop_hook_active: false }, off), null)
+
+  // undo off: an approved action runs without a copy, and Codex is not told there is one.
+  const noUndo = { ...cfg, undo: false }
+  const other = session()
+  const pre = turn => handle('PreToolUse', { session_id: other, turn_id: turn, cwd: root, tool_name: 'Bash', tool_input: { command: 'rm -rf src' } }, noUndo)
+  assert.doesNotMatch(pre('t1').hookSpecificOutput.permissionDecisionReason, /bcx undo/)
+  handle('UserPromptSubmit', { session_id: other, turn_id: 't2', cwd: root, prompt: 'sí' }, noUndo)
+  assert.equal(pre('t2'), null)
 })
 
 test('guard: a yes to the question Codex asked first does not need a second yes', () => {
@@ -165,7 +176,7 @@ test('guard: after a block, a yes also covers the literal command Codex then pro
   const literal = join(root, 'data')
   handle('Stop', { session_id: sid, turn_id: 't1', cwd: root, stop_hook_active: false, last_assistant_message: `Necesito ejecutar exactamente:\n\n\`Remove-Item -LiteralPath '${literal}' -Recurse -Force\`\n\n¿Confirmas este comando exacto?` }, cfg)
   handle('UserPromptSubmit', { session_id: sid, turn_id: 't2', cwd: root, prompt: 'sí' }, cfg)
-  assert.equal(pre('t2', `Remove-Item -LiteralPath '${literal}' -Recurse -Force`), null)
+  assert.equal(pre('t2', `Remove-Item -LiteralPath '${literal}' -Recurse -Force`).hookSpecificOutput, undefined)
 })
 
 test('a command that ran over 30 s is pointed out once, and the next session brief remembers it', () => {

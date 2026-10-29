@@ -33,7 +33,8 @@ export const freshState = () => ({
   started: {},
   // Slow commands Codex was already told about this session.
   slowWarned: [],
-  guard: { pending: [], approved: [], approvedTurn: null, asked: '' }
+  // saved: "turn|rule|detail" of approved actions already copied for bcx undo.
+  guard: { pending: [], approved: [], approvedTurn: null, asked: '', saved: [] }
 })
 
 export function loadState(id) {

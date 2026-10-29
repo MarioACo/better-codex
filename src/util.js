@@ -8,12 +8,12 @@ const ENV = { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' 
 
 // Runs a program without a shell. Returns its stdout, or null on any failure or timeout:
 // hooks must never break Codex because git is missing or slow.
-export function run(cmd, args, { cwd, timeout = 2000 } = {}) {
+export function run(cmd, args, { cwd, timeout = 2000, env } = {}) {
   try {
     return execFileSync(cmd, args, {
       cwd,
       timeout,
-      env: ENV,
+      env: env ? { ...ENV, ...env } : ENV,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
       windowsHide: true,

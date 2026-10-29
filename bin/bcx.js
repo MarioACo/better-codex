@@ -101,7 +101,8 @@ const commands = {
         'guard-blocked': () => `${red('⛔')} ${RULES[e.rule]?.title[lang] ?? e.rule}  ${dim(e.command || '')}`,
         'guard-approved': () => `${green('✓')} ${L('aprobado por ti', 'approved by you')}  ${dim(e.command || '')}`,
         'guard-allowed': () =>
-          `${green('▶')} ${e.via === 'question' ? L('permitido: dijiste «sí» a la pregunta de Codex', 'allowed: you said yes to Codex’s question') : L('permitido con tu aprobación', 'allowed with your approval')}  ${dim(e.command || '')}`,
+          `${green('▶')} ${e.via === 'question' ? L('permitido: dijiste «sí» a la pregunta de Codex', 'allowed: you said yes to Codex’s question') : L('permitido con tu aprobación', 'allowed with your approval')}  ${dim(e.command || '')}${e.undo ? cyan(L('  ↺ copia en bcx undo', '  ↺ copy in bcx undo')) : ''}`,
+        'undo-restored': () => `${cyan('↺')} ${L('restaurado con bcx undo', 'restored with bcx undo')}  ${dim(e.command || '')}`,
         diet: () => `${cyan('✂')} ${L('lectura evitada', 'read skipped')} (${e.rule})  ${dim(e.path || '')}${e.savedTokens ? dim(`  ≈${humanNumber(e.savedTokens)} tokens`) : ''}`,
         'verify-gate': () => `${yellow('↻')} ${L('le pedí verificar antes de terminar', 'asked to verify before finishing')}`,
         'big-output': () => `${yellow('!')} ${L('salida enorme', 'huge output')} ≈${humanNumber(e.tokens)} tokens`,
@@ -110,6 +111,52 @@ const commands = {
       }[e.kind]
       if (what) console.log(`${dim(time(e.t).padEnd(16))} ${what()}`)
     }
+  },
+
+  async undo() {
+    const { listUndo, restore, summary } = await import('../src/undo.js')
+    const { record } = await import('../src/metrics.js')
+    const time = t => new Date(t).toLocaleString(lang === 'es' ? 'es-MX' : 'en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    const [which] = positional()
+    const entries = listUndo()
+    if (!which) {
+      if (!entries.length) return console.log(dim(L('No hay copias: se guarda una antes de cada acción destructiva que apruebas.', 'No copies yet: one is saved before each destructive action you approve.')))
+      console.log(bold(L('Copias guardadas antes de acciones que aprobaste (la más reciente primero)', 'Copies saved before actions you approved (newest first)')))
+      entries.forEach((e, i) => {
+        const where = e.git?.root || (e.files?.paths?.[0]?.path ?? '')
+        console.log(`  ${bold(String(i + 1).padStart(2))}  ${dim(time(e.at).padEnd(16))} ${e.command.slice(0, 70)}`)
+        console.log(dim(`        ${summary(e, lang)}${where ? `  ${where}` : ''}`))
+      })
+      return console.log(dim(L('\n  Restaurar: bcx undo 1. Nunca reemplaza un archivo que ya existe; con --overwrite sí, guardando antes el actual.', '\n  Restore: bcx undo 1. It never replaces a file that exists; with --overwrite it does, saving the current one first.')))
+    }
+    const entry = /^\d+$/.test(which) ? entries[Number(which) - 1] : entries.find(e => e.id === which)
+    if (!entry) {
+      console.error(red(L(`✗ No hay copia ${which}: bcx undo las lista.`, `✗ No copy ${which}: bcx undo lists them.`)))
+      process.exitCode = 1
+      return
+    }
+    let report
+    try {
+      report = restore(entry, { overwrite: flag('overwrite') })
+    } catch (error) {
+      console.error(red(`✗ ${error.message}`))
+      process.exitCode = 1
+      return
+    }
+    record('undo-restored', { command: entry.command.slice(0, 160), restored: report.restored.length, kept: report.kept.length })
+    console.log(bold(`${L('Deshecho', 'Undone')}: ${entry.command.slice(0, 90)}`))
+    const one = report.restored.length === 1
+    console.log(`  ${green('✓')} ${report.restored.length} ${L(one ? 'archivo restaurado' : 'archivos restaurados', one ? 'file restored' : 'files restored')}`)
+    for (const path of report.restored.slice(0, 10)) console.log(dim(`      ${path}`))
+    if (report.restored.length > 10) console.log(dim(`      … ${report.restored.length - 10} ${L('más', 'more')}`))
+    for (const what of report.created) console.log(`  ${green('✓')} ${what}`)
+    if (report.kept.length) {
+      console.log(`  ${yellow('!')} ${report.kept.length} ${L('ya existían y cambiaron: los dejé como están. La copia de cada uno:', 'exist again and differ: left as they are. The copy of each:')}`)
+      for (const { path, copy } of report.kept.slice(0, 10)) console.log(dim(`      ${path}\n        ← ${copy}`))
+      console.log(dim(L('      Para reemplazarlos: bcx undo', '      To replace them: bcx undo') + ` ${which} --overwrite`))
+    }
+    for (const hint of report.hints) console.log(`  ${yellow('!')} ${L('a mano, si lo quieres', 'by hand, if you want it')}: ${hint}`)
+    if (report.saved.length) console.log(dim(L('  Lo que había antes de deshacer quedó guardado: bcx undo 1 lo regresa.', '  What was there before undoing is saved: bcx undo 1 brings it back.')))
   },
 
   async uninstall() {
@@ -323,6 +370,7 @@ const commands = {
   bcx brief [carpeta]          ${L('el resumen del repo que recibe Codex', 'the repo brief Codex receives')}
   bcx try "<prompt>"           ${L('lo que se agregaría a ese prompt', 'what would be added to that prompt')}
   bcx guard "<comando>"        ${L('si el guard lo detendría y por qué', 'whether the guard would stop it, and why')}
+  bcx undo [n] [--overwrite]   ${L('las copias guardadas antes de cada acción que aprobaste, y restaurarlas', 'the copies saved before each action you approved, and restoring them')}
   bcx config [set k v|reset]   ${L('ajustes', 'settings')}
   bcx uninstall                ${L('quita todo lo instalado', 'removes everything installed')}
 

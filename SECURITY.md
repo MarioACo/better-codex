@@ -25,6 +25,7 @@ Everything runs on your machine, and better-codex makes no network calls. It kee
 
 - **Per-session state**: the last prompt you sent and Codex's last reply. It's used to tie a "yes" to the question it answers, and it's deleted after 7 days.
 - **Your shell profiles** (PowerShell profile, `.bashrc`, `.zshrc` and the files they source in your home) are read as text to expand your aliases. Nothing in them runs and nothing from them is stored. On Windows it remembers where your Documents folder is (`shell.json`).
+- **Copies for `bcx undo`**: before an action you approved, the files it would delete or overwrite go to `~/.codex/better-codex/undo/`, and that can include a `.env`. For git commands the snapshot is also stored as git objects under `refs/bcx/undo/` in your repo. They stay on your machine: `git push` doesn't send those refs, but `git push --mirror` would, and the guard asks before that. Only the last 20 copies from the last 14 days are kept. `bcx config set undo off` turns it off.
 - **Metrics** (`events.jsonl`): no prompts. They do record the commands the guard stopped or allowed and the paths the diet skipped, trimmed to 160 characters. The file rotates at 2 MB, and `BCX_NO_METRICS=1` turns metrics off.
 
 ## Supported versions
