@@ -1,6 +1,7 @@
 import { existsSync, realpathSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { expand, shellAliases, tilde } from './aliases.js'
 import { gitRoot } from './git.js'
 import { pathArgs, patchFiles, segments, shellWrites, toolCommands, verbOf } from './shell.js'
 import { readJson, readText, run, toPosix } from './util.js'
@@ -190,7 +191,8 @@ export function gitStatusMap(root) {
 // Lazily computed facts about the repo, shared by the rules of one tool call.
 // created: files Codex created this session. touched: files Codex changed this session.
 // userDirty: files that had uncommitted changes Codex did not make (yours) when a turn started.
-function context({ cwd, created = [], touched = [], userDirty = [] }) {
+// aliases: your shell aliases and functions (src/aliases.js), read from your profiles if not given.
+function context({ cwd, created = [], touched = [], userDirty = [], aliases }) {
   // Asking git where the repo is spawns a process (~100 ms on Windows) and most commands
   // (rg, cat, git status…) never need it: only the rules that do pay for it.
   let repo = null
@@ -200,8 +202,23 @@ function context({ cwd, created = [], touched = [], userDirty = [] }) {
   // Same spelling on both sides of every comparison; built only when a rule asks.
   let sets = null
   const set = name => (sets ??= { created: new Set(created.map(canon)), touched: new Set(touched.map(canon)), userDirty: new Set(userDirty.map(canon)) })[name]
+  // A profile that can't be read means no aliases, never a guard that stops checking.
+  let defs = aliases
+  const loadDefs = () => {
+    try {
+      return shellAliases()
+    } catch {
+      return {}
+    }
+  }
   const ctx = {
     cwd,
+    get aliases() {
+      return (defs ??= loadDefs())
+    },
+    alias: verb => (Object.hasOwn(ctx.aliases, verb) ? ctx.aliases[verb] : null),
+    // Aliases being expanded: like the shell, `alias rm='rm -i'` does not expand rm again.
+    expanding: new Set(),
     get root() {
       return root()
     },
@@ -567,12 +584,25 @@ function checkNpmScript(seg, ctx, depth) {
   const found = name && findPackageJson(ctx.cwd)
   const scripts = found?.pkg?.scripts || {}
   if (!name || !scripts[name]) return null
-  const child = found.dir === ctx.cwd ? ctx : context({ cwd: found.dir, ...ctx.lists })
+  const child = found.dir === ctx.cwd ? ctx : context({ cwd: found.dir, ...ctx.lists, aliases: ctx.aliases })
   for (const script of [scripts[`pre${name}`], scripts[name], scripts[`post${name}`]].filter(Boolean)) {
     const inner = inspectCommand(script, child, depth + 1)
     if (inner) return { ...inner, detail: `${seg.verb} ${name} → ${inner.detail}` }
   }
   return null
+}
+
+// nuke tmp, where your profile says nuke = rm -rf: the shell runs the alias or function, not the word.
+function checkAlias(seg, ctx, depth) {
+  const def = ctx.alias(seg.verb)
+  if (!def || ctx.expanding.has(seg.verb)) return null
+  ctx.expanding.add(seg.verb)
+  try {
+    const found = inspectCommand(expand(def, seg.argv.slice(1)), ctx, depth + 1)
+    return found && { ...found, detail: `${seg.argv[0]} (${def.kind} in ${tilde(def.file)}) → ${found.detail}` }
+  } finally {
+    ctx.expanding.delete(seg.verb)
+  }
 }
 
 function inspectCommand(command, ctx, depth) {
@@ -589,7 +619,8 @@ function inspectCommand(command, ctx, depth) {
       checkGlobalConfig(seg) ||
       checkInline(seg, ctx) ||
       checkScript(seg, ctx, depth) ||
-      checkNpmScript(seg, ctx, depth)
+      checkNpmScript(seg, ctx, depth) ||
+      checkAlias(seg, ctx, depth)
     // What Codex ran is the outer command; the detail tells what it leads to.
     if (found) return { ...found, command: seg.text.slice(0, 300), targets: pathArgs(seg.argv) }
   }
@@ -597,8 +628,8 @@ function inspectCommand(command, ctx, depth) {
 }
 
 // The first risky thing a tool call would do, or null.
-export function inspect({ toolName, toolInput, cwd, created = [], touched = [], userDirty = [] }) {
-  const ctx = context({ cwd, created, touched, userDirty })
+export function inspect({ toolName, toolInput, cwd, created = [], touched = [], userDirty = [], aliases }) {
+  const ctx = context({ cwd, created, touched, userDirty, aliases })
   if (/apply_patch|edit|write/i.test(toolName || '') || patchFiles(toolInput).length) {
     const found = checkPatch(toolInput, ctx)
     if (found) return { ...found, command: 'apply_patch', targets: patchFiles(toolInput).map(f => f.path) }

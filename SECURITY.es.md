@@ -13,7 +13,8 @@ Revisa cada comando y parche antes de que corran, incluidos:
 - los comandos por tubería;
 - los scripts `.ps1` y `.sh`;
 - los scripts de `package.json`;
-- el código que Codex escribió antes en la sesión y luego ejecuta.
+- el código que Codex escribió antes en la sesión y luego ejecuta;
+- tus alias y funciones de la terminal (`nuke tmp` cuando `nuke` es `rm -rf`).
 
 **No es un sandbox, y no protege contra un agente malicioso.** Analiza el texto de los comandos con heurísticas, así que un programa lo bastante indirecto puede pasar. Úsalo junto con el sandbox y las aprobaciones de Codex, no en su lugar.
 
@@ -22,6 +23,7 @@ Revisa cada comando y parche antes de que corran, incluidos:
 Todo corre en tu máquina, y better-codex no hace llamadas de red. Guarda su estado y métricas en `~/.codex/better-codex/`:
 
 - **Estado por sesión**: el último prompt que enviaste y la última respuesta de Codex. Sirve para ligar un «sí» a la pregunta que responde, y se borra a los 7 días.
+- **Tus perfiles de terminal** (perfil de PowerShell, `.bashrc`, `.zshrc` y los archivos que cargan dentro de tu carpeta personal) se leen como texto para expandir tus alias. Nada de ellos se ejecuta ni se guarda. En Windows recuerda dónde está tu carpeta Documentos (`shell.json`).
 - **Métricas** (`events.jsonl`): no guardan prompts. Sí registran los comandos que el guard detuvo o permitió y las rutas que la dieta evitó leer, recortados a 160 caracteres. El archivo rota al llegar a 2 MB, y `BCX_NO_METRICS=1` apaga las métricas.
 
 ## Versiones con soporte

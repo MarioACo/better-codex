@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { shellAliases, tilde } from './aliases.js'
 import { codexHooks } from './codex-hooks.js'
 import { EVENTS } from './hooks.js'
 import { agentsBlock, agentsPath, appDir, blockOf, findCodex, hasOurHooks, hookCommand, hooksPath, hookTrust, installedCommand, marketplaceRoot, runCodex } from './install.js'
@@ -151,6 +152,13 @@ export function doctor({ offline = false } = {}) {
     const leftover = /better-codex bench: temporary file/.test(readText(override, ''))
     add('warn', 'AGENTS.override', leftover ? `${override} was left by an interrupted benchmark: delete it` : `${override} takes precedence over AGENTS.md, so Codex never reads the better-codex rules`)
   }
+
+  // The aliases and functions the guard expands (src/aliases.js), so you can see it found yours.
+  let defs = []
+  try {
+    defs = Object.values(shellAliases())
+  } catch {}
+  if (defs.length) add('info', 'aliases', `${defs.length} in ${[...new Set(defs.map(d => tilde(d.file)))].join(', ')}: the guard checks what they run`)
 
   const drift = liveStatus().filter(l => l.missing && l.missingAgo < 7 * 24 * 60 * 60 * 1000)
   if (drift.length) add('warn', 'hook format', `Codex stopped sending ${drift.map(l => `${l.event}.${l.missing.map(([f]) => f).join('/')}`).join(', ')}: it may have changed its hook format. Please open an issue with this output.`)

@@ -175,7 +175,8 @@ The **guard** inspects every command and patch before it runs. It doesn't stop a
 - `.ps1` and `.sh` scripts;
 - what each `npm run …` actually runs, according to your `package.json`;
 - `node -e` and `python -c` code;
-- scripts Codex wrote earlier in the session before running them.
+- scripts Codex wrote earlier in the session before running them;
+- your aliases and functions: if your PowerShell profile, `.bashrc` or `.zshrc` says `nuke` is `rm -rf`, `nuke tmp` is checked as `rm -rf tmp`. They are read as text, so nothing in your profile runs; aliases that plugins create on startup (oh-my-zsh, PowerShell modules) aren't seen. `bcx doctor` lists the ones it found.
 
 It stops on:
 
@@ -308,7 +309,7 @@ This removes the hooks, the `AGENTS.md` block, the marketplace and the installed
 ## Development
 
 ```bash
-npm test                       # 93 tests with node:test, no dependencies
+npm test                       # 96 tests with node:test, no dependencies
 npm run check                  # tests + offline doctor
 node scripts/codex-compat.mjs  # against your real Codex binary: no login, no model calls
 node bench/run.mjs             # the benchmark (uses your Codex quota)
