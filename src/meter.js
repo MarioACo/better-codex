@@ -3,7 +3,8 @@ import { humanNumber, pick, whenLabel, windowLabel } from './i18n.js'
 const levelOf = (pct, warn, critical) => (pct >= critical ? 2 : pct >= warn ? 1 : 0)
 
 // The line shown under Codex's answer. In 'warn' mode only when a metric climbs to a new level in this session.
-export function meterCheck(usage, cfg, previous = {}, lang = 'en') {
+// relayed: the relay for the next session is written (src/relay.js), so starting fresh loses nothing.
+export function meterCheck(usage, cfg, previous = {}, lang = 'en', { relayed = false } = {}) {
   if (!usage || cfg.meter === 'off') return { message: null, levels: previous }
   const levels = {
     ctx: usage.context ? levelOf(usage.context.pct, cfg.ctxWarn, cfg.ctxCritical) : 0,
@@ -19,7 +20,9 @@ export function meterCheck(usage, cfg, previous = {}, lang = 'en') {
     const { pct, used, window } = usage.context
     const base = pick(lang, `contexto ${pct}% (${humanNumber(used)} de ${humanNumber(window)})`, `context ${pct}% (${humanNumber(used)} of ${humanNumber(window)})`)
     const advice =
-      levels.ctx === 2
+      levels.ctx === 2 && relayed
+        ? pick(lang, 'cada turno reenvía todo eso: abre una sesión nueva en este repo, ya le dejé un relevo con lo que iba', 'every turn resends all of it: start a new session in this repo, a relay with where things stand is ready for it')
+        : levels.ctx === 2
         ? pick(lang, 'cada turno reenvía todo eso y las respuestas empeoran: usa $bcx:handoff y abre una sesión nueva', 'every turn resends all of it and answers get worse: use $bcx:handoff and start a new session')
         : levels.ctx === 1
           ? pick(lang, 'buen momento para /compact', 'a good time to /compact')

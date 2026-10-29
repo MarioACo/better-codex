@@ -162,11 +162,14 @@ export function backup(found, { session = null, limits = LIMITS, protect = null 
     const paths = wanted(save, limits)
     if (paths.length) entry.files = copyFiles(paths, dir, limits)
     if (save.git) entry.git = gitSnapshot(save.git, dir, id, `better-codex undo ${id}: ${entry.command}`, limits)
+    if (save.config) entry.config = configSnapshot(save.config)
+    // A database file or ~/.npmrc is meant to be replaced on undo: it exists again, changed, by design.
+    if (save.replace && entry.files?.paths) entry.files.replace = true
   } catch (error) {
     rmSync(dir, { recursive: true, force: true })
     throw error
   }
-  if (!entry.files?.paths && !entry.git?.ref) {
+  if (!entry.files?.paths && !entry.git?.ref && !entry.config) {
     rmSync(dir, { recursive: true, force: true })
     const skipped = entry.files?.skipped || entry.git?.skipped
     return skipped ? { skipped } : null
@@ -210,6 +213,7 @@ export function summary(entry, lang) {
     if (!n) parts.push(pick(lang, 'las ramas y el stash del repo', 'the repo’s branches and stash'))
     else parts.push(pick(lang, `el repo (${n} ${n === 1 ? 'archivo' : 'archivos'} sin commit, ramas y stash)`, `the repo (${n} uncommitted ${n === 1 ? 'file' : 'files'}, branches and stash)`))
   }
+  if (entry.config) parts.push(`${entry.config.tool === 'git' ? `git config ${entry.config.scope.join(' ')} ${entry.config.key}` : `${entry.config.name} (${pick(lang, 'variable de usuario', 'user variable')})`} ${pick(lang, 'antes', 'was')}: ${entry.config.old?.length ? entry.config.old.join(', ') : pick(lang, 'sin valor', 'unset')}`)
   return parts.join(' + ')
 }
 
@@ -233,6 +237,7 @@ function restoreFiles(entry, report, overwrite) {
   }
   entry.files.paths.forEach(({ path }, i) => walk(join(base, String(i)), path))
   const conflicts = pairs.filter(([from, to]) => existsSync(to) && !same(from, to))
+  overwrite ||= !!entry.files.replace
   if (overwrite && conflicts.length) {
     const before = backup({ rule: 'undo', command: `bcx undo ${entry.id} --overwrite`, detail: 'files before undo', save: { paths: conflicts.map(([, to]) => to) } }, { protect: entry.id })
     if (!before?.id) throw new Error('could not save your current files first, so nothing was changed')
@@ -306,5 +311,33 @@ export function restore(entry, { overwrite = false } = {}) {
   const report = { restored: [], kept: [], created: [], hints: [], saved: [] }
   if (entry.files?.paths) restoreFiles(entry, report, overwrite)
   if (entry.git?.ref) restoreGit(entry, report)
+  if (entry.config) restoreConfig(entry, report)
   return report
+}
+
+// The value a git key or a Windows user variable had before an approved change: [] or null when unset.
+function configSnapshot(config) {
+  if (config.tool === 'git') return { ...config, old: lines(run('git', ['config', ...config.scope, '--get-all', config.key], { timeout: 4000 })) }
+  if (config.tool === 'setx' && process.platform === 'win32') {
+    const out = run('reg', ['query', 'HKCU\\Environment', '/v', config.name], { timeout: 4000 })
+    const value = out && new RegExp(`^\\s*${config.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s+REG_\\w+\\s*(.*)$`, 'im').exec(out)?.[1]
+    return { ...config, old: value == null ? [] : [value.trim()] }
+  }
+  return null
+}
+
+function restoreConfig(entry, report) {
+  const { tool, scope, key, name, old } = entry.config
+  // Undo can be undone: the value right now is saved first.
+  const before = backup({ rule: 'undo', command: `bcx undo ${entry.id}`, detail: 'value before undo', save: { config: entry.config } }, { protect: entry.id })
+  if (before?.id) report.saved.push(before.id)
+  if (tool === 'git') {
+    run('git', ['config', ...scope, '--unset-all', key], { timeout: 4000 })
+    for (const value of old) if (run('git', ['config', ...scope, '--add', key, value], { timeout: 4000 }) === null) throw new Error(`git config ${scope.join(' ')} --add ${key} failed`)
+    report.restored.push(`git config ${scope.join(' ')} ${key}`)
+  } else if (tool === 'setx') {
+    const done = old.length ? run('setx', [name, old[0]], { timeout: 8000 }) : run('reg', ['delete', 'HKCU\\Environment', '/v', name, '/f'], { timeout: 8000 })
+    if (done === null) throw new Error(`could not set ${name} back`)
+    report.restored.push(`${name} (${old.length ? old[0] : 'unset'})`)
+  }
 }

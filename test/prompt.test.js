@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { boostPrompt, classify, domainOf, fileHints, parseMode } from '../src/prompt.js'
+import { boostPrompt, classify, domainOf, fileHints, parseMode, symbolHints } from '../src/prompt.js'
+import { run } from '../src/util.js'
+import { repo, write } from './helpers.js'
 
 test('modes: prefixes in English and Spanish, the marker is dropped', () => {
   assert.deepEqual(parseMode('+fix the parser'), { mode: 'deep', rest: 'fix the parser' })
@@ -99,4 +101,15 @@ test('domains: database, infrastructure, containers, CI/CD, security and UI each
   assert.equal(boostPrompt('¿cómo funciona la migración de usuarios?').domain, null) // a question gets an answer
   assert.match(boostPrompt('agrega una migración para la tabla orders').text, /Database: read the current schema[\s\S]*never edit one that may have run/)
   assert.doesNotMatch(boostPrompt('ahora crea otra migración para la tabla users', { seen: ['feature', 'db'] }).text, /Database:/)
+})
+
+test('symbols: where the names in the prompt are defined, found with git grep', () => {
+  const root = repo({ 'src/tax.js': 'export function calcularTotal(items) {}\nconst rate_for = x => x\n', 'src/report_service.py': 'class ReportService:\n    def build_report(self):\n        pass\n', 'README.md': 'calcularTotal is documented here\n' })
+  write(root, { 'src/new.js': 'export const formatInvoice = () => {}\n' }) // not committed yet
+  const exec = (args, cwd) => run('git', ['-c', 'core.quotepath=off', ...args], { cwd, timeout: 3000 })
+  const found = symbolHints('por qué calcularTotal y `rate_for` fallan en ReportService.build_report', root, { run: exec }).map(s => `${s.name} ${s.at}`)
+  assert.deepEqual(found.sort(), ['ReportService src/report_service.py:1', 'build_report src/report_service.py:2', 'calcularTotal src/tax.js:1', 'rate_for src/tax.js:2'])
+  assert.deepEqual(symbolHints('revisa formatInvoice', root, { run: exec }), [{ name: 'formatInvoice', at: 'src/new.js:1' }])
+  assert.deepEqual(symbolHints('arregla el login que truena', root, { run: exec }), [])
+  assert.match(boostPrompt('arregla calcularTotal', { symbols: [{ name: 'calcularTotal', at: 'src/tax.js:1' }] }).text, /Defined at \(from git grep, confirm before use\): calcularTotal → src\/tax\.js:1/)
 })

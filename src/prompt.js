@@ -183,7 +183,33 @@ export function fileHints(prompt, files, { max = 6 } = {}) {
 }
 
 // What UserPromptSubmit adds for one prompt. `seen` are playbooks already given in this session.
-export function boostPrompt(prompt, { files = [], seen = [], hints = true } = {}) {
+// Code names in a prompt: `quoted`, camelCase, PascalCase and snake_case words, the ones a definition can have.
+export function symbolsIn(prompt, max = 4) {
+  const names = new Set()
+  for (const m of prompt.matchAll(/`([A-Za-z_$][\w$]{2,60})`/g)) names.add(m[1])
+  for (const m of prompt.matchAll(/\b[a-z][a-z0-9]*[A-Z][A-Za-z0-9]*\b|\b[A-Z][a-z0-9]+[A-Z][A-Za-z0-9]*\b|\b[a-z][a-z0-9]*_[a-z0-9_]+\b/g)) names.add(m[0])
+  return [...names].filter(n => n.length >= 4 && !STOPWORDS.has(n.toLowerCase())).slice(0, max)
+}
+
+// Where the names in the prompt are defined (function, class, def, const…), found with one git grep:
+// "calcularTotal → src/tax.js:12" spares Codex the search it would start with. Empty when git can't say.
+export function symbolHints(prompt, root, { run: exec } = {}) {
+  const names = symbolsIn(prompt)
+  if (!root || !names.length) return []
+  const alt = names.map(n => n.replace(/\$/g, '\\$')).join('|')
+  const pattern = `(function|class|def|func|fn|interface|type|enum|struct|trait|module|const|let|var|val)[[:space:]]+(${alt})([^[:alnum:]_]|$)|^[[:space:]]*(export[[:space:]]+)?(async[[:space:]]+)?(${alt})[[:space:]]*[:=][[:space:]]*(async[[:space:]]*)?(function|\\()`
+  const out = exec(['grep', '-n', '-I', '--untracked', '-E', '-e', pattern, '--', '.', ':!*node_modules*', ':!*dist/*', ':!*build/*', ':!*.min.js', ':!*.lock'], root) || ''
+  const found = []
+  for (const line of out.split(/\r?\n/)) {
+    const m = /^([^:]+):(\d+):(.*)$/.exec(line)
+    if (!m) continue
+    const name = names.find(n => new RegExp(`(^|[^\\w$])${n.replace(/\$/g, '\\$')}([^\\w$]|$)`).test(m[3]))
+    if (name && found.filter(f => f.name === name).length < 2) found.push({ name, at: `${m[1]}:${m[2]}` })
+  }
+  return found.slice(0, 6)
+}
+
+export function boostPrompt(prompt, { files = [], seen = [], hints = true, symbols = [] } = {}) {
   const { mode, rest } = parseMode(prompt)
   const parts = []
   if (mode) parts.push(MODES[mode].text)
@@ -194,6 +220,7 @@ export function boostPrompt(prompt, { files = [], seen = [], hints = true } = {}
   const domain = task && task !== 'question' ? domainOf(rest, found) : null
   if (domain && !seen.includes(domain)) parts.push(DOMAINS[domain].text)
   if (found.length) parts.push(`Likely relevant paths (matched from the prompt, confirm before use): ${found.join(', ')}`)
+  if (symbols.length) parts.push(`Defined at (from git grep, confirm before use): ${symbols.map(s => `${s.name} → ${s.at}`).join(' · ')}`)
   const text = parts.length ? clip(`[better-codex] ${parts.join('\n')}`, 1600) : ''
-  return { mode, task, domain, hints: found, text }
+  return { mode, task, domain, hints: found, symbols, text }
 }

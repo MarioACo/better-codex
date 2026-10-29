@@ -1,6 +1,6 @@
 {
   "name": "bcx",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "better-codex skills: Conventional Commits, refine a vague request, hand off long sessions, debug methodically, fix failing CI and migrate databases safely.",
   "author": {
     "name": "MarioACo",

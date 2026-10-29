@@ -70,6 +70,7 @@ export function trackTool(state, { toolName, toolInput, cwd, verifyCmd, output }
     state.seq += 1
     state.lastVerify = state.seq
     state.verifyFailed = failureOf(output)
+    state.lastCheck = { command: commands.find(c => VERIFY.test(withoutExt(c)) || (verifyCmd && c.includes(verifyCmd))) ?? commands[0], failed: state.verifyFailed }
   }
   // Infrastructure files have their own checks (src/infra.js): terraform validate, docker compose config…
   state.infra ??= {}
@@ -88,8 +89,10 @@ export function trackTool(state, { toolName, toolInput, cwd, verifyCmd, output }
     const entry = (state.infra[kind.id] ??= { files: [], base: cwd })
     entry.checked = state.seq
     const m = kind.failed.exec(text)
+    state.lastCheck = { command: commands.find(c => kind.ran.test(withoutExt(c))), failed: null }
     entry.failed = m ? text.slice(text.lastIndexOf('\n', m.index) + 1, text.indexOf('\n', m.index) === -1 ? undefined : text.indexOf('\n', m.index)).trim().slice(0, 160) : null
   }
+  if (state.lastCheck && state.infra) for (const entry of Object.values(state.infra)) if (entry.checked === state.seq) state.lastCheck.failed = entry.failed
   return { edits: edits.length, verified }
 }
 
@@ -103,8 +106,11 @@ export function gate(state, project) {
   const code = project?.verify ? state.edited.filter(f => CODE_EXT.test(f)) : []
   if (code.length && state.lastEdit > state.lastVerify) {
     const files = `${code.slice(0, 5).join(', ')}${code.length > 5 ? ', …' : ''}`
+    // The tests for the files that changed first (src/review.js): faster, and they point at the change.
+    const first = project.focused ? `\`${project.focused}\` (the tests for the files you changed), then ` : ''
+    if (project.focused) checks.push(project.focused)
     checks.push(project.verify)
-    parts.push(`You changed code (${files}) but ran no check after the last edit. Run \`${project.verify}\` or a narrower, faster check that covers the change, fix what fails, then give your final answer with the result. If it cannot run here, say why in one line instead.`)
+    parts.push(`You changed code (${files}) but ran no check after the last edit. Run ${first}\`${project.verify}\` or a narrower, faster check that covers the change, fix what fails, then give your final answer with the result. If it cannot run here, say why in one line instead.`)
   } else if (code.length && state.verifyFailed) {
     failures.push(state.verifyFailed)
     parts.push(`The last check after your changes failed: "${state.verifyFailed}". Fix the cause and run the check again before finishing. If the failure is unrelated to your change or was already there, say so plainly in your answer instead of reporting success.`)
@@ -122,10 +128,15 @@ export function gate(state, project) {
       parts.push(`The ${kind.label} check failed: "${entry.failed}". Fix it and check again, or say plainly that it still fails and why.`)
     }
   }
-  if (!parts.length) return null
   // Codex already told the user it still fails: sending it back would only cost a request.
-  if (!checks.length && ACKNOWLEDGED.test(state.lastAnswer || '')) return null
-  return { reason: `[better-codex verify-gate] ${parts.join(' ')}`, checks, failed: failures[0] ?? null }
+  if (!checks.length && parts.length && ACKNOWLEDGED.test(state.lastAnswer || '')) parts.length = 0
+  // What the change left behind (src/review.js): debugging, .only/.skip, conflict markers, new TODOs.
+  const review = project?.review || []
+  if (review.length) {
+    parts.push(`Your change also left this behind: ${review.map(r => `${r.file}:${r.line} ${r.issue}`).join('; ')}. Remove what was only for debugging or testing; if one is meant to stay (a real TODO, an intended skip), say so in one line.`)
+  }
+  if (!parts.length) return null
+  return { reason: `[better-codex verify-gate] ${parts.join(' ')}`, checks, failed: failures[0] ?? null, review }
 }
 
 export const gateReason = (state, project) => gate(state, project)?.reason ?? null

@@ -138,13 +138,15 @@ Hooks only run after you trust them once in `/hooks`. Until then, every one of t
 | When | Feature | What it does |
 | --- | --- | --- |
 | Session start | **brief** | Gives Codex the branch, uncommitted changes, stack, test/lint/build commands and repo layout in ~100–350 tokens: what it would otherwise spend tool calls finding out. It also covers shell quirks: on Windows it says to use `npm.cmd`, because PowerShell often blocks `npm.ps1`, and it says when `rg` is missing. It also lists the commands that were slow in this repo last time. For infrastructure and databases it names what the repo has (Dockerfiles, Compose with its Postgres or Redis, Terraform, Kubernetes, Helm, GitHub Actions, Prisma and the migration folders of Drizzle, Alembic, Django, Rails, Laravel, Flyway…) and the checks Codex can run for them with the tools installed on your machine. The brief comes back after `/compact`. |
-| Every prompt | **boost** | Applies the prompt modes below, adds a short playbook for the kind of task (bug, feature, refactor, tests, review, performance, docs, question; English and Spanish; once per session) and one for its area (databases, infrastructure as code, containers and Kubernetes, CI/CD, security, UI), and resolves the files you name (`login`, `ReportTable`, `format.ts:12`) to real paths. |
+| Every prompt | **boost** | Applies the prompt modes below, adds a short playbook for the kind of task (bug, feature, refactor, tests, review, performance, docs, question; English and Spanish; once per session) and one for its area (databases, infrastructure as code, containers and Kubernetes, CI/CD, security, UI), and resolves the files you name (`login`, `ReportTable`, `format.ts:12`) to real paths. Functions and classes you name (`calcularTotal`, `ReportService`) come with where they are defined, found with one `git grep`. |
 | Before each command | **guard** | Stops destructive or hard-to-undo actions until you approve them. See [Safety](#safety). |
 | Before each command | **diet** | Blocks full reads of large lockfiles, build output, binaries and files over 200 KB, and recursive listings that would walk `node_modules`. Tells Codex how to read them instead (`rg -n`, line ranges). |
+| Before each command | **fix** | Corrects a command before it runs instead of letting it fail: `npm`, `npx`, `pnpm` and `yarn` become `.cmd` on Windows, where PowerShell blocks the `.ps1` (verified live: the call that failed in every session now works), `npm install` runs with `--no-audit --no-fund`, and a program that was missing and replaced by a known variant (`python` → `py`) is remembered on this machine. Only the text changes: Codex's approvals and sandbox still apply. |
 | After each command | **slow commands** | Times every command. One that took over 30 s is pointed out to Codex once and remembered for the repo, so next time Codex runs it and waits for it inside one call instead of polling. Live, on a 75 s test run: 5 requests became 2, and input tokens fell 60%. |
 | After each command | **big output** | When an output was huge (over 48 KB), reminds Codex to narrow its next searches. |
-| Before finishing | **verify gate** | If Codex changed code and ran no check after its last edit, sends it back once to run `npm test` (or whatever your project uses). If the last check **failed** and Codex is about to finish without saying so, it sends Codex back to fix it or say plainly that it fails. It reads the failure from the output of node:test, Jest, Vitest, Mocha, pytest, Go, Cargo, tsc, ESLint, Gradle, Maven, .NET, Karma, Angular and npm. Infrastructure files get their own check: `terraform validate` for `.tf`, `docker build --check` or hadolint for a Dockerfile, `docker compose config` for Compose, `helm lint`, `kubectl kustomize` or kubeconform, actionlint for workflows, `prisma validate` for the schema. A check is only asked for when its tool is installed. |
-| Before finishing | **meter** | Warns you below the answer when context passes 60% (`/compact`) or 80% (`$bcx:handoff` and a new session), and when your 5-hour or weekly limits pass 75%. |
+| Before finishing | **verify gate** | If Codex changed code and ran no check after its last edit, sends it back once to run `npm test` (or whatever your project uses). If the last check **failed** and Codex is about to finish without saying so, it sends Codex back to fix it or say plainly that it fails. It reads the failure from the output of node:test, Jest, Vitest, Mocha, pytest, Go, Cargo, tsc, ESLint, Gradle, Maven, .NET, Karma, Angular and npm. Infrastructure files get their own check: `terraform validate` for `.tf`, `docker build --check` or hadolint for a Dockerfile, `docker compose config` for Compose, `helm lint`, `kubectl kustomize` or kubeconform, actionlint for workflows, `prisma validate` for the schema. A check is only asked for when its tool is installed. Before the full suite it asks for the tests of the files that changed (`src/cart.js` → `node --test test/cart.test.js`). It also reads the diff, without the model, for what the change left behind: `debugger`, `pdb.set_trace()`, debug prints, `.only` or `.skip` in tests, conflict markers and new TODOs. |
+| Before finishing | **meter** | Warns you below the answer when context passes 60% (`/compact`) or 80% (a new session), and when your 5-hour or weekly limits pass 75%. |
+| Past 80% of context | **relay** | Writes down where the work stands, without the model: the requests, the files changed, the last check and Codex's last answer. The next session in that repo gets it once, in its brief, so starting fresh loses nothing. In the author's sessions, the few that ran past 70% of the context took 79% of all input tokens. |
 
 ### Prompt modes
 
@@ -192,6 +194,7 @@ It stops on:
 - **Infrastructure and publishing**: `terraform destroy`, `terraform state rm`, `kubectl delete`, `docker compose down -v`, `docker push`, `npm publish`, `firebase deploy`, making a repo public… Any `kubectl apply`, `helm upgrade` or `kubectl scale` aimed at production (by `--context`, namespace or your current context) is critical; a `--dry-run` is fine.
 - **Killing programs by name**: `taskkill /IM chrome.exe`, `Stop-Process -Name node` and `pkill java` also close your own windows and servers. Killing by PID doesn't ask.
 - **Your global configuration**: `git config --global …` (your identity), `npm config set`, `setx`, user or machine environment variables.
+- **MCP tools**: destructive SQL through a database server, and tools that delete, merge, push, publish, deploy, pay, refund or send messages (GitHub, Slack, Stripe…), with the tool and its arguments in the question. Tools that read pass.
 - **better-codex's own settings**: Codex running `bcx allow`, `bcx config set guard off` or `bcx uninstall`, or editing its settings, its allow list or `~/.codex/hooks.json`.
 - **The system**: formatting disks, the Windows registry, deleting restore points, turning off the antivirus or firewall, shutting down, `curl … | bash`.
 - **Commands only known when they run**: `eval "$CMD"`, `iex $script`, another command's output piped into `bash` or `iex`. It doesn't ask for setup lines meant to be run that way, such as `eval "$(ssh-agent -s)"` or `conda shell.powershell hook | Out-String | iex`, nor for `iex $x` inside your own scripts.
@@ -208,11 +211,11 @@ It stops on:
 - the files it deletes or overwrites (without `node_modules` and caches, up to 100 MB);
 - for git commands, your uncommitted work, untracked files included, and every branch and stash, as a commit under `refs/bcx/undo/`. It reads through a copy of your index, so it never touches yours.
 
-Codex mentions it when it asks, and a line confirms it once saved. `bcx undo` lists the copies, and `bcx undo 1` puts the newest back. Deleted branches and dropped stashes come back too, and a branch moved by `reset --hard` goes back where it was. It never replaces a file that exists again unless you add `--overwrite`, and even then it saves the current one first. The state before undoing is saved as well, so an undo can be undone. It keeps the last 20 copies from the last 14 days. Databases, deploys and what a push already sent can't be copied; after a force push it prints the command that puts the remote branch back.
+Codex mentions it when it asks, and a line confirms it once saved. `bcx undo` lists the copies, and `bcx undo 1` puts the newest back. Deleted branches and dropped stashes come back too, and a branch moved by `reset --hard` goes back where it was. It never replaces a file that exists again unless you add `--overwrite`, and even then it saves the current one first. The state before undoing is saved as well, so an undo can be undone. It also keeps the old value of a `git config --global` key or a Windows user variable (`setx`), and a copy of `~/.npmrc` and of local SQLite databases before an approved `DROP` or reset. It keeps the last 20 copies from the last 14 days. Databases, deploys and what a push already sent can't be copied; after a force push it prints the command that puts the remote branch back.
 
 **Strict mode.** The guard looks for what is dangerous, so something it doesn't recognize goes through. `bcx config set strict on` turns that around: only what is known to be safe runs without asking, which means read-only commands, git and gh queries, tests, builds, linters and infra checks. Anything else asks, including whatever the list doesn't recognize: `git commit`, `npm install`, `node -e`, `curl`, writing files from the shell, running a program. Real risks still come first, so `git add; rm -rf src` is reported as a delete. Expect many more questions. Replaying the author's last 30 days, it would have asked on 24% of commands, against 2% without it. `bcx audit --strict` shows what it would ask in your sessions, grouped by command, and `bcx allow "git commit"` lets one kind of command through in one repo, whatever its arguments.
 
-**Allowed in one repo.** If the guard keeps asking about something that is always fine in a repo, run `bcx allow "rm -rf generated/"` there. The next time it stops, its message suggests the exact command.
+**Allowed in one repo.** If the guard keeps asking about something that is always fine in a repo, run `bcx allow "rm -rf generated/"` there. The next time it stops, its message suggests the exact command, and so does the third time you approve the same action in that repo.
 
 - A folder covers what's inside it; any other action is allowed only exactly as written.
 - It applies to that repo only. `bcx allow` lists what's allowed, and `bcx allow --remove 1` removes a rule.
@@ -270,6 +273,9 @@ bcx config reset
 | `guard` | `true` | Asking before destructive actions |
 | `undo` | `true` | A copy of what an approved action can destroy, before it runs (`bcx undo`) |
 | `strict` | `false` | Only known read-only commands, tests and builds run without asking; everything else asks |
+| `fix` | `true` | Corrects commands before they run (`npm.cmd` on Windows, quieter `npm install`, fixes learned here) |
+| `review` | `true` | Reads the diff before Codex finishes for what the change left behind |
+| `relay` | `true` | Past 80% of context, a note of where the work stands for the next session |
 | `brief` | `true` | Repo brief at session start |
 | `boost` / `hints` | `true` | Modes and playbooks per prompt / suggested paths |
 | `diet` / `dietMaxKB` | `true` / `200` | Wasteful reads / largest full read |
@@ -335,7 +341,7 @@ This removes the hooks, the `AGENTS.md` block, the marketplace and the installed
 ## Development
 
 ```bash
-npm test                       # 113 tests with node:test, no dependencies
+npm test                       # 124 tests with node:test, no dependencies
 npm run check                  # tests + offline doctor
 node scripts/codex-compat.mjs  # against your real Codex binary: no login, no model calls
 node bench/run.mjs             # the benchmark (uses your Codex quota)

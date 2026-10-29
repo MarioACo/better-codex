@@ -416,3 +416,19 @@ test('strict mode: only known read-only commands, tests and builds go through; a
   // Codex can't switch it off
   assert.equal(rule('bcx config set strict off', root), 'bcx-settings')
 })
+
+test('MCP tools: destructive SQL, deleting, merging, sending or paying asks; reading passes', () => {
+  const root = repo()
+  const mcp = (toolName, toolInput, extra = {}) => inspect({ toolName, toolInput, cwd: root, ...extra })?.rule ?? null
+  assert.equal(mcp('mcp__postgres__query', { sql: 'DROP TABLE users' }), 'database')
+  assert.equal(mcp('mcp__postgres__query', { sql: 'SELECT * FROM users LIMIT 5' }), null)
+  for (const tool of ['mcp__github__delete_repository', 'mcp__github__merge_pull_request', 'mcp__github__push_files', 'mcp__slack__post_message', 'mcp__stripe__createRefund']) {
+    assert.equal(mcp(tool, { id: 'x' }), 'mcp', tool)
+  }
+  assert.match(inspect({ toolName: 'mcp__github__delete_repository', toolInput: { owner: 'acme', repo: 'app' }, cwd: root }).detail, /^github\.delete_repository \{"owner":"acme","repo":"app"\}/)
+  assert.equal(mcp('mcp__filesystem__read_file', { path: '.env' }), 'secrets-read')
+  for (const tool of ['mcp__github__get_issue', 'mcp__github__list_pull_requests', 'mcp__github__create_issue', 'mcp__filesystem__write_file']) assert.equal(mcp(tool, { path: 'src/a.js' }), null, tool)
+  // strict mode: only tools that read
+  assert.equal(mcp('mcp__github__create_issue', { title: 'x' }, { strict: true }), 'strict')
+  assert.equal(mcp('mcp__github__get_issue', { number: 1 }, { strict: true }), null)
+})

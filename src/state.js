@@ -35,6 +35,9 @@ export const freshState = () => ({
   started: {},
   // Slow commands Codex was already told about this session.
   slowWarned: [],
+  // The requests of this session and its last check, for the relay (src/relay.js).
+  prompts: [],
+  lastCheck: null,
   // saved: "turn|rule|detail" of approved actions already copied for bcx undo.
   guard: { pending: [], approved: [], approvedTurn: null, asked: '', saved: [] }
 })

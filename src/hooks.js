@@ -7,14 +7,18 @@ import { pick, resolveLang } from './i18n.js'
 import { meterCheck } from './meter.js'
 import { record } from './metrics.js'
 import { detectProject } from './project.js'
-import { boostPrompt } from './prompt.js'
+import { boostPrompt, symbolHints } from './prompt.js'
 import { extractWorkdir, toolCommands } from './shell.js'
 import { duration, rememberSlow, SLOW_SECONDS } from './slow.js'
 import { loadState, pruneStates, saveState } from './state.js'
+import { countApproval } from './allow.js'
+import { relayText, takeRelay, writeRelay } from './relay.js'
+import { focusedTests, reviewChanges } from './review.js'
+import { fixCommand, learnFix } from './fix.js'
 import { readUsage } from './transcript.js'
 import { backup, canBackup, summary } from './undo.js'
 import { dataDir } from './paths.js'
-import { clip, estimateTokens, writeJson } from './util.js'
+import { clip, estimateTokens, run, writeJson } from './util.js'
 import { gate, trackTool } from './verify.js'
 
 export const EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop']
@@ -44,8 +48,12 @@ function safely(fn, fallback = null) {
 
 function onSessionStart(input, cfg, cwd) {
   safely(() => pruneStates())
-  if (!cfg.brief || !/^(startup|clear|compact)$/.test(input.source || 'startup')) return null
-  const text = safely(() => repoBrief(cwd), '')
+  if (!/^(startup|clear|compact)$/.test(input.source || 'startup')) return null
+  const brief = cfg.brief ? safely(() => repoBrief(cwd), '') : ''
+  // A new session gets the relay the last one left when its context filled up (not the same session after /compact).
+  const relay = cfg.relay && input.source !== 'compact' ? safely(() => takeRelay(cwd, input.session_id)) : null
+  if (relay) record('relay-given', { pct: relay.pct })
+  const text = [brief, relay && relayText(relay)].filter(Boolean).join('\n')
   if (!text) return null
   record('brief', { tokens: estimateTokens(text) })
   return addContext('SessionStart', text)
@@ -109,13 +117,16 @@ function onUserPromptSubmit(input, cfg, cwd) {
     gateFired: false,
     bigOutputWarned: false,
     prompt: clip(prompt, 4000),
+    // Requests, not "sí" or "dale": what the relay says this session was about.
+    prompts: prompt.trim().length >= 15 && !isApproval(prompt) ? [...(state.prompts || []), clip(prompt.trim(), 300)].slice(-8) : state.prompts || [],
     verifyCmd: safely(() => detectProject(root || cwd).verify)
   })
 
   if (cfg.boost) {
     safely(() => {
       const files = cfg.hints && root && prompt.length >= 8 ? gitFiles(root) : []
-      const result = boostPrompt(prompt, { files, seen: state.playbooks, hints: cfg.hints })
+      const symbols = cfg.hints && root ? safely(() => symbolHints(prompt, root, { run: (args, cwd) => run('git', ['-c', 'core.quotepath=off', ...args], { cwd, timeout: 1500 }) }), []) : []
+      const result = boostPrompt(prompt, { files, seen: state.playbooks, hints: cfg.hints, symbols })
       for (const given of [result.task, result.domain]) if (given && !state.playbooks.includes(given)) state.playbooks.push(given)
       if (result.text) {
         parts.push(result.text)
@@ -156,9 +167,13 @@ function onPreToolUse(input, cfg, cwd) {
         }
         record('guard-allowed', { rule: found.rule, via, command: found.command.slice(0, 160), ...(saved?.id && { undo: saved.id }), ...(saved?.skipped && { undoSkipped: saved.skipped }) })
         const lang = resolveLang(cfg.lang)
-        if (saved?.id) return { systemMessage: `better-codex: ${pick(lang, 'copia guardada antes de ejecutarlo', 'saved a copy before running it')}: ${summary(saved, lang)}. ${pick(lang, 'Para deshacerlo', 'To undo it')}: bcx undo` }
-        if (saved?.skipped) return { systemMessage: `better-codex: ${pick(lang, 'no guardé copia', 'no copy saved')} (${saved.skipped}).` }
-        return null
+        const notes = []
+        if (saved?.id) notes.push(`${pick(lang, 'copia guardada antes de ejecutarlo', 'saved a copy before running it')}: ${summary(saved, lang)}. ${pick(lang, 'Para deshacerlo', 'To undo it')}: bcx undo`)
+        if (saved?.skipped) notes.push(`${pick(lang, 'no guardé copia', 'no copy saved')} (${saved.skipped})`)
+        // The third yes to the same action in this repo: offer to stop asking. Yours to run, never Codex's.
+        const times = found.severity !== 'critical' && found.rule !== 'bcx-settings' && found.command !== 'apply_patch' ? safely(() => countApproval(gitRoot(workdir), found), 0) : 0
+        if (times === 3) notes.push(pick(lang, `ya lo aprobaste ${times} veces en este repo. Si siempre está bien aquí: bcx allow "${found.command}"`, `you approved this ${times} times in this repo. If it is always fine here: bcx allow "${found.command}"`))
+        return notes.length ? { systemMessage: `better-codex: ${notes.join(' · ')}` } : null
       }
       guard.pending = [
         ...guard.pending.filter(p => !sameAction(p, found)),
@@ -183,6 +198,19 @@ function onPreToolUse(input, cfg, cwd) {
     state.started = Object.fromEntries([...Object.entries(state.started || {}).slice(-19), [input.tool_use_id, Date.now()]])
     saveState(input.session_id, state)
   }
+
+  // A command that would fail or flood the context is corrected before it runs (src/fix.js): only a plain
+  // command string, never a code-mode script. Codex applies updatedInput only with "allow", and in Codex that
+  // "allow" means "continue with this input": it drops its earlier permission assessment and makes a new
+  // one for the corrected command, so its approvals and sandbox still apply (codex-rs/core/src/tools/registry.rs).
+  const key = typeof toolInput?.command === 'string' ? 'command' : typeof toolInput?.cmd === 'string' ? 'cmd' : null
+  if (cfg.fix && key && /^(Bash|exec|exec_command|shell|shell_command)$/.test(toolName || '') && !/\btools\.\w+\s*\(/.test(toolInput[key])) {
+    const fixed = safely(() => fixCommand(toolInput[key]))
+    if (fixed) {
+      record('fixed', { notes: fixed.notes, command: toolInput[key].slice(0, 160) })
+      return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', updatedInput: { ...toolInput, [key]: fixed.command } } }
+    }
+  }
   return null
 }
 
@@ -190,6 +218,13 @@ function onPostToolUse(input, cfg, cwd) {
   const state = loadState(input.session_id)
   const toolInput = input.tool_input
   safely(() => trackTool(state, { toolName: input.tool_name, toolInput, cwd: extractWorkdir(toolInput, cwd), verifyCmd: state.verifyCmd, output: input.tool_response }))
+  // python missing, then py worked: next time python becomes py before it runs.
+  if (cfg.fix) {
+    for (const command of toolCommands(input.tool_name, toolInput)) {
+      const learned = safely(() => learnFix(state, command, input.tool_response))
+      if (learned) record('fix-learned', learned)
+    }
+  }
 
   let out = null
   const startedAt = state.started?.[input.tool_use_id]
@@ -228,7 +263,7 @@ function onPostToolUse(input, cfg, cwd) {
   return out
 }
 
-function onStop(input, cfg, lang) {
+function onStop(input, cfg, lang, cwd) {
   const state = loadState(input.session_id)
   const out = {}
   const messages = []
@@ -251,26 +286,38 @@ function onStop(input, cfg, lang) {
 
   // Not while Codex waits for your approval, and only once per turn.
   if (cfg.verifyGate && !input.stop_hook_active && !state.guard.pending.length) {
-    const sent = safely(() => gate(state, { verify: state.verifyCmd }))
+    // Only when this turn edited something: a git diff and a look for the tests of the changed files.
+    const edited = state.edited.length > 0
+    const review = edited && cfg.review ? safely(() => reviewChanges(cwd, state.edited), []) : []
+    const focused = edited && state.lastEdit > state.lastVerify ? safely(() => focusedTests(cwd, state.edited, state.verifyCmd)) : null
+    const sent = safely(() => gate(state, { verify: state.verifyCmd, focused, review }))
     if (sent) {
       state.gateFired = true
       out.decision = 'block'
       out.reason = sent.reason
       const failed = !sent.checks.length && sent.failed
       const checks = sent.checks.map(c => `\`${c}\``).join(', ')
-      record('verify-gate', { failed: !!failed })
-      messages.push(
-        failed
-          ? pick(lang, `better-codex: la verificación falló («${failed}»); le pedí a Codex arreglarla o explicarla antes de terminar.`, `better-codex: the check failed ("${failed}"); asked Codex to fix or explain it before finishing.`)
-          : pick(lang, `better-codex: le pedí a Codex verificar con ${checks} antes de terminar.`, `better-codex: asked Codex to verify with ${checks} before finishing.`)
-      )
+      const left = sent.review.map(r => `${r.file}:${r.line}`).join(', ')
+      record('verify-gate', { failed: !!failed, review: sent.review.length })
+      if (sent.checks.length || failed) {
+        messages.push(
+          failed
+            ? pick(lang, `better-codex: la verificación falló («${failed}»); le pedí a Codex arreglarla o explicarla antes de terminar.`, `better-codex: the check failed ("${failed}"); asked Codex to fix or explain it before finishing.`)
+            : pick(lang, `better-codex: le pedí a Codex verificar con ${checks} antes de terminar.`, `better-codex: asked Codex to verify with ${checks} before finishing.`)
+        )
+      }
+      if (left) messages.push(pick(lang, `better-codex: le pedí a Codex revisar lo que dejó su cambio (${left}).`, `better-codex: asked Codex to look at what its change left behind (${left}).`))
     }
   }
 
   if (cfg.meter !== 'off') {
     safely(() => {
       const usage = readUsage(input.transcript_path)
-      const { message, levels } = meterCheck(usage, cfg, state.meter, lang)
+      const pct = usage?.context?.pct ?? 0
+      const relayed = cfg.relay && pct >= cfg.ctxCritical && !!safely(() => writeRelay({ cwd, state, session: input.session_id, pct }))
+      if (relayed && !state.relayed) record('relay-written', { pct })
+      state.relayed ||= relayed
+      const { message, levels } = meterCheck(usage, cfg, state.meter, lang, { relayed })
       state.meter = levels
       if (message) {
         messages.push(message)
@@ -298,7 +345,7 @@ export function handle(event, input, cfg = loadConfig()) {
     case 'PostToolUse':
       return onPostToolUse(input, cfg, cwd)
     case 'Stop':
-      return onStop(input, cfg, resolveLang(cfg.lang))
+      return onStop(input, cfg, resolveLang(cfg.lang), cwd)
     default:
       return null
   }

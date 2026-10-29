@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { inspect } from '../src/guard.js'
 import { backup, canBackup, LIMITS, listUndo, restore } from '../src/undo.js'
-import { isolate, repo, write } from './helpers.js'
+import { isolate, repo, tempDir, write } from './helpers.js'
 
 isolate()
 const found = (command, cwd) => inspect({ toolName: 'Bash', toolInput: { command }, cwd })
@@ -94,4 +94,25 @@ test('undo: past the limits nothing is copied, and old copies go with their git 
   assert.equal(listUndo().length, 2)
   assert.ok(!listUndo().some(e => e.id === first.id))
   assert.equal(git(root, 'for-each-ref', 'refs/bcx/undo').split('\n').length, 2)
+})
+
+test('undo: a git config key and a SQLite database come back as they were', () => {
+  const root = repo()
+  assert.deepEqual(found('git config --global user.email work@example.com', root).save, { config: { tool: 'git', scope: ['--global'], key: 'user.email' } })
+  // the same, on a config file of its own instead of your ~/.gitconfig
+  const file = join(tempDir(), 'gitconfig')
+  writeFileSync(file, '[user]\n\tname = Ana\n')
+  const entry = backup({ rule: 'global-config', command: 'git config --global user.name Bob', detail: 'sets user.name', save: { config: { tool: 'git', scope: ['--file', file], key: 'user.name' } } })
+  assert.deepEqual(entry.config.old, ['Ana'])
+  git(root, 'config', '--file', file, 'user.name', 'Bob')
+  restore(entry)
+  assert.equal(git(root, 'config', '--file', file, '--get', 'user.name'), 'Ana')
+
+  write(root, { 'dev.db': 'SQLite format 3 with users' })
+  const drop = found('sqlite3 dev.db "DROP TABLE users"', root)
+  assert.equal(drop.rule, 'database')
+  const copy = backup(drop)
+  writeFileSync(join(root, 'dev.db'), 'SQLite format 3 without users')
+  restore(copy) // a database file is meant to be replaced: no --overwrite needed
+  assert.equal(read(root, 'dev.db'), 'SQLite format 3 with users')
 })

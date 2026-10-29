@@ -2,9 +2,20 @@
 
 **English** · [Español](CHANGELOG.es.md)
 
-## Unreleased
+## 0.3.0 — 2026-10-29
 
-Infrastructure, databases and DevOps:
+More efficient, safer, better answers:
+
+- **Relay** (efficiency). Past 80% of the context, better-codex writes down where the work stands, without the model: the requests, the files changed, the last check and Codex's last answer. The next session in that repo gets it once in its brief. In the author's sessions, the few that ran past 70% of the context took 79% of all input tokens.
+- **Commands fixed before they run** (efficiency). On Windows `npm`, `npx`, `pnpm` and `yarn` become `.cmd`, because PowerShell blocks the `.ps1`. That call failed in every session; verified live, Codex now runs `npm.cmd --version` and gets the version. `npm install` runs with `--no-audit --no-fund`, and a missing program replaced by a known variant (`python` → `py`) is remembered. Codex applies the change only with `allow`, and in Codex that `allow` just carries the new input: its approvals and sandbox are evaluated again for the corrected command.
+- **Where things are defined** (efficiency). Functions and classes named in the prompt come with their definition (`calcularTotal → src/tax.js:12`), from one `git grep` (~50 ms).
+- **Review of the diff before finishing** (better answers). Without the model: `debugger`, `pdb.set_trace()`, debug prints, `.only`/`.skip` in tests, conflict markers and new TODOs that the change added send Codex back once.
+- **Tests of what changed first** (better answers, efficiency). The verify gate asks for the tests of the changed files (`src/cart.js` → `node --test test/cart.test.js`) before the full suite.
+- **MCP tools in the guard** (safety). Destructive SQL through a database server, and tools that delete, merge, push, publish, deploy, pay or send messages, ask first. Reading passes. **`hooks.json` changes: trust the hooks again once in `/hooks`.**
+- **`bcx undo` for more**: the old value of a `git config --global` key or a Windows user variable, `~/.npmrc`, and local SQLite databases before an approved `DROP` or reset.
+- **`bcx allow` offered** the third time you approve the same action in a repo.
+
+Infrastructure, databases, DevOps and strict mode:
 
 - **Guard: infrastructure secrets.** Reading Terraform state (`terraform.tfstate` keeps passwords in plain text), `.tfvars`, kubeconfig, `.pgpass` or Docker's `config.json` now asks first, and so do commands that print secret values: `kubectl get secret -o yaml`, `terraform output -json`, `terraform state pull`, `aws secretsmanager get-secret-value`, `gcloud secrets versions access`, Vault, 1Password, Doppler, Heroku.
 - **Guard: production clusters.** `kubectl apply/patch/scale/rollout…` and `helm install/upgrade/rollback` aimed at production (by `--context`, `--kube-context`, the namespace or kubectl's current context) are critical. A `--dry-run` and other contexts are fine. `terraform state rm/mv/push`, `force-unlock`, `taint` and `docker push` ask too.

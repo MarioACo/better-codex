@@ -204,3 +204,20 @@ test('a command that ran over 30 s is pointed out once, and the next session bri
   const brief = handle('SessionStart', { session_id: session(), cwd: root, source: 'startup' }, cfg)
   assert.match(contextOf(brief), /slow here last time: `npm\.cmd test` ~80 s/)
 })
+
+test('relay: past the critical context level, the next session in the repo gets where the work stands, once', () => {
+  const root = repo()
+  const dir = tempDir()
+  write(dir, { 'rollout.jsonl': `${ROLLOUT.replace('"input_tokens":200000', '"input_tokens":230000')}\n` }) // 89% of the window
+  const sid = session()
+  const post = (tool_name, command, tool_response) => handle('PostToolUse', { session_id: sid, turn_id: 't1', cwd: root, tool_name, tool_input: { command }, tool_response }, cfg)
+  handle('UserPromptSubmit', { session_id: sid, turn_id: 't1', cwd: root, prompt: 'agrega exportar a CSV en el reporte de ventas' }, cfg)
+  post('apply_patch', '*** Begin Patch\n*** Update File: src/app.js\n*** End Patch', 'ok')
+  post('Bash', 'npm test', 'ℹ fail 1\n')
+  const stop = handle('Stop', { session_id: sid, turn_id: 't1', cwd: root, stop_hook_active: true, last_assistant_message: 'Agregué el botón; falta el formato de fechas.', transcript_path: join(dir, 'rollout.jsonl') }, cfg)
+  assert.match(stop.systemMessage, /contexto 89%[\s\S]*ya le dejé un relevo/)
+
+  const next = contextOf(handle('SessionStart', { session_id: session(), cwd: root, source: 'startup' }, cfg))
+  assert.match(next, /relay from the previous session \(it ended at 89% of its context[\s\S]*"agrega exportar a CSV en el reporte de ventas"[\s\S]*files changed on \S+: src\/app\.js[\s\S]*`npm test` failed \("ℹ fail 1"\)[\s\S]*falta el formato de fechas/)
+  assert.doesNotMatch(contextOf(handle('SessionStart', { session_id: session(), cwd: root, source: 'startup' }, cfg)), /relay from/) // once
+})

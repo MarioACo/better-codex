@@ -117,6 +117,14 @@ export const RULES = {
     },
     safer: 'apply it to this repository only (git config without --global, a project .npmrc)'
   },
+  mcp: {
+    title: { es: 'Acción con una herramienta MCP', en: 'Action through an MCP tool' },
+    risk: {
+      es: 'actúa directo sobre un servicio (repos, mensajes, pagos, despliegues, archivos) y puede no tener vuelta atrás',
+      en: 'it acts directly on a service (repos, messages, payments, deployments, files) and may not be undoable'
+    },
+    safer: 'show the user the exact tool and arguments first, and prefer a read-only tool to check before acting'
+  },
   'bcx-settings': {
     title: { es: 'Cambiar los permisos de better-codex', en: 'Change better-codex’s own settings' },
     risk: {
@@ -534,9 +542,10 @@ function checkCluster(seg, ctx) {
   return target ? { rule: 'infra', severity: 'critical', detail: `${seg.text.slice(0, 120)} changes the production cluster (${target})` } : null
 }
 
-function checkPatterns(seg) {
+function checkPatterns(seg, ctx) {
   if (DB_CLIENT.test(seg.verb) && DESTRUCTIVE_DB.some(re => re.test(seg.text))) {
-    return { rule: 'database', severity: 'critical', detail: seg.text }
+    const files = ctx ? sqliteFiles(seg, ctx) : []
+    return { rule: 'database', severity: 'critical', detail: seg.text, ...(files.length && { save: { paths: files, replace: true } }) }
   }
   if (INFRA.some(re => re.test(seg.text))) return { rule: 'infra', severity: 'high', detail: seg.text }
   if (SYSTEM.some(re => re.test(seg.text))) return { rule: 'system', severity: 'critical', detail: seg.text }
@@ -578,6 +587,7 @@ function checkKill(seg) {
 }
 
 // git config --global user.email x, npm config set registry …, setx PATH …
+// save: what bcx undo needs to put the old value back (src/undo.js): the git key, the user variable, ~/.npmrc.
 function checkGlobalConfig(seg) {
   const hit = { rule: 'global-config', severity: 'high', detail: seg.text }
   if (seg.verb === 'git') {
@@ -585,14 +595,29 @@ function checkGlobalConfig(seg) {
     if (sub !== 'config' || !rest.some(a => /^--(global|system)$/.test(a))) return null
     if (rest.some(a => /^--(get|get-all|get-regexp|list)$|^-l$/.test(a))) return null
     const writes = rest.some(a => /^--(unset|unset-all|add|replace-all|edit|remove-section|rename-section)$|^-e$/.test(a)) || rest.filter(a => !a.startsWith('-')).length >= 2
-    return writes ? hit : null
+    const key = rest.find(a => !a.startsWith('-'))
+    const scope = rest.includes('--system') ? ['--system'] : ['--global']
+    return writes ? { ...hit, ...(key && !rest.some(a => /^--(edit|remove-section|rename-section)$|^-e$/.test(a)) && { save: { config: { tool: 'git', scope, key } } }) } : null
   }
   if (/^(npm|pnpm|yarn)$/.test(seg.verb)) {
     const [first, second] = seg.argv.slice(1)
     const write = first === 'set' || (first === 'config' && /^(set|delete|rm|edit)$/.test(second || ''))
-    return write && !/--location[= ]project/.test(seg.text) ? hit : null
+    return write && !/--location[= ]project/.test(seg.text) ? { ...hit, save: { paths: [join(homedir(), '.npmrc')], replace: true } } : null
   }
-  return seg.verb === 'setx' ? hit : null
+  // setx NAME value changes your user variable; with /M the machine's, which needs an administrator to put back.
+  if (seg.verb === 'setx') return { ...hit, ...(seg.argv[1] && !seg.argv.some(a => /^\/m$/i.test(a)) && { save: { config: { tool: 'setx', name: seg.argv[1] } } }) }
+  return null
+}
+
+// SQLite files a destructive database command can hit: the ones it names, Prisma's from its schema, and the
+// usual places (Django, Laravel, Rails, Flask). Copied before an approved run, so bcx undo can put them back.
+const SQLITE = /\.(db|sqlite|sqlite3|db3)$/i
+const SQLITE_PLACES = ['db.sqlite3', 'prisma/dev.db', 'database/database.sqlite', 'db/development.sqlite3', 'instance/app.db', 'storage/database.sqlite']
+function sqliteFiles(seg, ctx) {
+  const named = seg.argv.slice(1).map(a => a.replace(/^file:/, '')).filter(a => SQLITE.test(a))
+  const prisma = /provider\s*=\s*"sqlite"[\s\S]*?url\s*=\s*"file:([^"]+)"/.exec(readText(join(ctx.cwd, 'prisma', 'schema.prisma'), ''))?.[1]
+  const paths = [...named.map(ctx.abs), ...(prisma ? [toPosix(resolve(ctx.cwd, 'prisma', prisma))] : []), ...SQLITE_PLACES.map(ctx.abs)]
+  return [...new Set(paths)].filter(p => existsSync(p))
 }
 
 // Codex giving itself permission or switching protection off: bcx allow "…", bcx config set guard off,
@@ -872,7 +897,7 @@ function inspectCommand(command, ctx, depth) {
       checkGit(seg, ctx) ||
       checkSecrets(seg, ctx) ||
       checkCluster(seg, ctx) ||
-      checkPatterns(seg) ||
+      checkPatterns(seg, ctx) ||
       checkKill(seg) ||
       checkGlobalConfig(seg) ||
       checkSettings(seg, ctx) ||
@@ -993,9 +1018,36 @@ function checkStrict(seg, ctx, depth) {
 }
 
 // The first risky thing a tool call would do, or null. strict: only known-safe commands go through.
+// MCP tools (mcp__server__tool) act on databases, repos, files and services directly, outside the shell:
+// destructive SQL in any argument, tools that delete, merge, push, publish, deploy, pay or send, and
+// files tools touching secrets or better-codex's settings. In strict mode only tools that read pass.
+const MCP_ACTS = /(^|_)(delete|drop|destroy|remove|purge|truncate|reset|wipe|merge|push|force|publish|deploy|release|rollback|transfer|pay|payment|charge|refund|send|post|email|archive|revoke|ban|kick|terminate|shutdown|execute|exec|run)(_|$)/
+const MCP_READS = /^(get|list|search|read|fetch|find|query|describe|show|view|lookup|count|check|status|help|browse|preview|resolve|retrieve|inspect)(_|$)/
+function checkMcp(toolName, toolInput, ctx) {
+  const [, server = '', tool = ''] = /^mcp__(.+?)__(.+)$/.exec(toolName) || []
+  const name = tool.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase()
+  const strings = []
+  const collect = v => (typeof v === 'string' ? strings.push(v) : v && typeof v === 'object' ? Object.values(v).forEach(collect) : null)
+  collect(toolInput)
+  const args = clip(JSON.stringify(toolInput ?? {}), 120)
+  const command = `${server}.${tool}`
+  const sql = strings.find(s => DESTRUCTIVE_SQL.some(re => re.test(s)))
+  if (sql) return { rule: 'database', severity: 'critical', detail: `${command} runs destructive SQL (${clip(sql.replace(/\s+/g, ' '), 80)})`, command, targets: [] }
+  const paths = strings.filter(s => /[\\/.]/.test(s) && s.length < 300)
+  if (paths.some(p => isSettings(p, ctx))) return { rule: 'bcx-settings', severity: 'critical', detail: `${command} touches better-codex's settings`, command, targets: [] }
+  if (paths.some(isSecretPath)) return { rule: /(write|edit|move|create|put|update|delete)/.test(name) ? 'secrets-write' : 'secrets-read', severity: 'high', detail: `${command} on ${paths.filter(isSecretPath).join(', ')}`, command, targets: [] }
+  if (MCP_ACTS.test(name)) return { rule: 'mcp', severity: 'high', detail: `${command} ${args}`, command, targets: [] }
+  if (ctx.strict && !MCP_READS.test(name)) return { rule: 'strict', severity: 'high', detail: `\`${command}\` isn't on the strict-mode list (read-only commands, tests, builds)`, command, targets: [] }
+  return null
+}
+
 export function inspect({ toolName, toolInput, cwd, created = [], touched = [], userDirty = [], aliases, allow, session, strict = false }) {
   const ctx = context({ cwd, created, touched, userDirty, aliases, allow, session })
   ctx.strict = strict
+  if (/^mcp__/.test(toolName || '')) {
+    const found = checkMcp(toolName, toolInput, ctx)
+    if (found && !ctx.allowed(found)) return found
+  }
   if (/apply_patch|edit|write/i.test(toolName || '') || patchFiles(toolInput).length) {
     const found = checkPatch(toolInput, ctx)
     if (found && !ctx.allowed(found)) return { ...found, command: 'apply_patch', targets: patchFiles(toolInput).map(f => f.path) }
@@ -1039,7 +1091,8 @@ const ASKS = {
   kill: /cerr|termin|\bmat|kill|stop|deten|proces|taskkill/iu,
   'global-config': /global|config|identidad|identity|registr|variable|entorno|environment|setx|npmrc/iu,
   'bcx-settings': /bcx|better-codex|permis|allow|config|guard|hooks/iu,
-  strict: /ejecut|corr|comando|permit|instal|run|command|allow|install/iu
+  strict: /ejecut|corr|comando|permit|instal|\brun\b|command|allow|install/iu,
+  mcp: /mcp|herramienta|tool|borr|elimin|delete|merge|publi|deploy|despleg|envi|send|pag|pay|push/iu
 }
 
 const words = text =>

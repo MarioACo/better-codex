@@ -13,6 +13,8 @@ export const BLOCK_START = '<!-- better-codex:start -->'
 export const BLOCK_END = '<!-- better-codex:end -->'
 // Tool names that run shell commands or patches. Codex maps shell tools to "Bash"; the rest are here in case it doesn't.
 const TOOL_MATCHER = '^(Bash|exec|exec_command|shell|shell_command|apply_patch)$'
+// Before a tool runs the guard also sees MCP tools (mcp__server__tool): a database, GitHub or files server can delete too.
+const GUARD_MATCHER = '^(Bash|exec|exec_command|shell|shell_command|apply_patch|mcp__.+)$'
 
 export const hooksPath = () => join(codexHome(), 'hooks.json')
 export const agentsPath = () => join(codexHome(), 'AGENTS.md')
@@ -79,7 +81,7 @@ export function ourHooks() {
   return {
     SessionStart: [{ matcher: '^(startup|clear|compact)$', hooks: [handler('SessionStart')] }],
     UserPromptSubmit: [{ hooks: [handler('UserPromptSubmit')] }],
-    PreToolUse: [{ matcher: TOOL_MATCHER, hooks: [handler('PreToolUse', 10)] }],
+    PreToolUse: [{ matcher: GUARD_MATCHER, hooks: [handler('PreToolUse', 10)] }],
     PostToolUse: [{ matcher: TOOL_MATCHER, hooks: [handler('PostToolUse', 10)] }],
     Stop: [{ hooks: [handler('Stop')] }]
   }

@@ -99,3 +99,18 @@ test('allow: in strict mode, allowing a kind of command covers it whatever its a
   assert.equal(strict('git commit -am "second, other flags"', [made.rule]), null)
   assert.equal(strict('git push', [made.rule])?.rule, 'strict') // only that kind
 })
+
+test('allow: the third yes to the same action in a repo offers bcx allow', () => {
+  const root = repo()
+  const cfg = { ...DEFAULTS, lang: 'en', undo: false }
+  const sid = 'allow-third'
+  const messages = []
+  for (const turn of [1, 2, 3, 4]) {
+    write(root, { 'out/report.txt': `run ${turn}\n` })
+    handle('UserPromptSubmit', { session_id: sid, turn_id: `a${turn}`, cwd: root, prompt: 'limpia out' }, cfg)
+    handle('PreToolUse', { session_id: sid, turn_id: `a${turn}`, cwd: root, tool_name: 'Bash', tool_input: { command: 'rm -rf out' } }, cfg)
+    handle('UserPromptSubmit', { session_id: sid, turn_id: `b${turn}`, cwd: root, prompt: 'sí' }, cfg)
+    messages.push(handle('PreToolUse', { session_id: sid, turn_id: `b${turn}`, cwd: root, tool_name: 'Bash', tool_input: { command: 'rm -rf out' } }, cfg)?.systemMessage ?? null)
+  }
+  assert.deepEqual(messages.map(m => /bcx allow "rm -rf out"/.test(m || '')), [false, false, true, false]) // offered once, at the third
+})

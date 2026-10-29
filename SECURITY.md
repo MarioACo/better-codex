@@ -28,6 +28,8 @@ Everything runs on your machine, and better-codex makes no network calls. It kee
 - **Codex's shell snapshot** (`~/.codex/shell_snapshots/`, macOS and Linux) is read as text, like your profiles, for its aliases and functions. Nothing from it is stored.
 - **`bcx allow` rules** (`allow.json`): each repo's path and the actions you allowed there. They're kept outside your repos so a repo you clone can't grant itself permissions, and the guard stops Codex from changing them.
 - **Copies for `bcx undo`**: before an action you approved, the files it would delete or overwrite go to `~/.codex/better-codex/undo/`, and that can include a `.env`. For git commands the snapshot is also stored as git objects under `refs/bcx/undo/` in your repo. They stay on your machine: `git push` doesn't send those refs, but `git push --mirror` would, and the guard asks before that. Only the last 20 copies from the last 14 days are kept. `bcx config set undo off` turns it off.
+- **The relay** (`relay/`, one file per repo): when a session passes 80% of its context, its last requests (trimmed to 300 characters), the files it changed, its last check and Codex's last answer, for the next session in that repo. Given once and kept 3 days.
+- **Learned fixes** (`fixes.json`): which missing program was replaced by which variant on this machine (`python` → `py`). **Approval counts** (`approvals.json`): how many times you approved each action per repo, for the `bcx allow` hint.
 - **Metrics** (`events.jsonl`): no prompts. They do record the commands the guard stopped or allowed and the paths the diet skipped, trimmed to 160 characters. The file rotates at 2 MB, and `BCX_NO_METRICS=1` turns metrics off.
 
 ## Supported versions

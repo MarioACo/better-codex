@@ -7,12 +7,15 @@ export const DEFAULTS = Object.freeze({
   guard: true, // PreToolUse: destructive or hard-to-undo actions wait for your explicit yes
   strict: false, // PreToolUse: only known read-only commands, tests and builds run without asking; the rest asks
   undo: true, // PreToolUse: a copy of what an action you approved can destroy, before it runs (bcx undo)
+  relay: true, // Stop/SessionStart: past ctxCritical, a note of where the work stands for the next session
   brief: true, // SessionStart: a compact map of the repo, so Codex skips the first exploration
   boost: true, // UserPromptSubmit: prompt modes (+, quick:, ask:, plan:) and task playbooks
   hints: true, // UserPromptSubmit: files that match the names in the prompt
+  fix: true, // PreToolUse: npm → npm.cmd on Windows, quieter npm install, and fixes learned here, before the command runs
   diet: true, // PreToolUse: block full reads of lockfiles, build output, binaries and huge files
   dietMaxKB: 200,
   bigOutputKB: 48, // PostToolUse: tell the model when one output was this big
+  review: true, // Stop: what the change left behind (debugger, .only, conflict markers, new TODOs) sends Codex back once
   verifyGate: true, // Stop: code changed and nothing checked it? one more step to verify
   meter: 'warn', // Stop: 'warn' (thresholds only) | 'always' | 'off'
   ctxWarn: 60,
