@@ -2,7 +2,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { dataDir } from './paths.js'
-import { tokenize, verbOf } from './shell.js'
+import { enclosed, tokenize, verbOf } from './shell.js'
 import { readJson, run, toPosix, writeJson } from './util.js'
 
 // Your aliases and functions, so the guard checks what `nuke tmp` runs when your profile says
@@ -39,28 +39,9 @@ export function profileFiles(home = homedir(), docs = process.platform === 'win3
   ]
 }
 
-// The text between the brace at `open` and its match, skipping quoted strings and # comments.
-function block(text, open) {
-  let depth = 0
-  let quote = null
-  for (let i = open; i < text.length && i - open < 20000; i++) {
-    const c = text[i]
-    if (quote) {
-      if (c === quote && (quote === "'" || !/[\\`]/.test(text[i - 1]))) quote = null
-    } else if (c === '"' || c === "'") quote = c
-    else if (c === '#' && /\s/.test(text[i - 1] ?? ' ')) {
-      const end = text.indexOf('\n', i)
-      if (end === -1) return null
-      i = end
-    } else if (c === '{') depth++
-    else if (c === '}' && --depth === 0) return text.slice(open + 1, i)
-  }
-  return null
-}
-
 const functions = (text, re) =>
   [...text.matchAll(re)].flatMap(m => {
-    const body = block(text, m.index + m[0].length - 1)
+    const body = enclosed(text, m.index + m[0].length - 1)
     return body == null ? [] : [{ name: m[1] ?? m[2], kind: 'function', body: body.trim() }]
   })
 

@@ -177,6 +177,7 @@ El **guard** revisa cada comando y cada parche antes de que corran. No se queda 
 - el código de `node -e` y `python -c`;
 - los scripts que Codex escribió antes en la sesión, antes de ejecutarlos;
 - tus alias y funciones: si tu perfil de PowerShell, `.bashrc` o `.zshrc` dice que `nuke` es `rm -rf`, `nuke tmp` se revisa como `rm -rf tmp`. Se leen como texto, así que nada de tu perfil se ejecuta; los alias que crean los plugins al arrancar (oh-my-zsh, módulos de PowerShell) no se ven. `bcx doctor` muestra los que encontró.
+- base64: `powershell -EncodedCommand …`, `… | base64 -d | bash` o `b64decode` dentro de `python -c` se decodifica y se revisa como cualquier otro comando.
 
 Se detiene ante:
 
@@ -189,6 +190,7 @@ Se detiene ante:
 - **Cerrar programas por nombre**: `taskkill /IM chrome.exe`, `Stop-Process -Name node` y `pkill java` también cierran tus propias ventanas y servidores. Cerrar por PID no pregunta.
 - **Tu configuración global**: `git config --global …` (tu identidad), `npm config set`, `setx`, variables de entorno de usuario o de máquina.
 - **El sistema**: formatear discos, el registro de Windows, borrar puntos de restauración, apagar el antivirus o el firewall, apagar el equipo, `curl … | bash`.
+- **Comandos que solo se conocen al correr**: `eval "$CMD"`, `iex $script`, la salida de otro comando enviada por tubería a `bash` o `iex`. No pregunta por las líneas de configuración hechas para correr así, como `eval "$(ssh-agent -s)"` o `conda shell.powershell hook | Out-String | iex`, ni por un `iex $x` dentro de tus propios scripts.
 
 **Cómo funciona la aprobación.** Un «sí» vale para una acción, en un turno:
 
@@ -309,7 +311,7 @@ Quita los hooks, el bloque de `AGENTS.md`, el marketplace y la copia instalada, 
 ## Desarrollo
 
 ```bash
-npm test                       # 96 pruebas con node:test, sin dependencias
+npm test                       # 97 pruebas con node:test, sin dependencias
 npm run check                  # pruebas + doctor sin red
 node scripts/codex-compat.mjs  # contra tu binario real de Codex: sin login ni llamadas al modelo
 node bench/run.mjs             # el benchmark (gasta cuota de tu Codex)

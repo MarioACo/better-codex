@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { expand, shellAliases, tilde } from './aliases.js'
 import { gitRoot } from './git.js'
-import { pathArgs, patchFiles, segments, shellWrites, toolCommands, verbOf } from './shell.js'
-import { readJson, readText, run, toPosix } from './util.js'
+import { enclosed, pathArgs, patchFiles, segments, shellWrites, toolCommands, verbOf } from './shell.js'
+import { clip, readJson, readText, run, toPosix } from './util.js'
 
 // What each rule protects, in the words shown to you (es/en) and to the model (en).
 export const RULES = {
@@ -87,6 +87,14 @@ export const RULES = {
       en: 'it runs unreviewed code with the user’s permissions'
     },
     safer: 'download it to a file, show what it does, and run it only after review'
+  },
+  hidden: {
+    title: { es: 'Ejecutar un comando escondido o que se arma al correr', en: 'Run a command that is hidden or built at runtime' },
+    risk: {
+      es: 'no se ve qué hace hasta que corre: puede borrar o cambiar cualquier cosa',
+      en: 'what it does cannot be seen until it runs, so it could delete or change anything'
+    },
+    safer: 'run the final command itself, written out in full, so it can be checked'
   },
   kill: {
     title: { es: 'Cerrar programas por nombre', en: 'Kill processes by name' },
@@ -219,6 +227,8 @@ function context({ cwd, created = [], touched = [], userDirty = [], aliases }) {
     alias: verb => (Object.hasOwn(ctx.aliases, verb) ? ctx.aliases[verb] : null),
     // Aliases being expanded: like the shell, `alias rm='rm -i'` does not expand rm again.
     expanding: new Set(),
+    // Scripts, package.json scripts and profile definitions being read: your code, not what Codex typed.
+    reading: 0,
     get root() {
       return root()
     },
@@ -558,7 +568,7 @@ function checkScript(seg, ctx, depth) {
       .split(/\r?\n/)
       .filter(line => !/^\s*(#|rem\b|::)/i.test(line))
       .join('\n')
-    const found = inspectCommand(body, ctx, depth + 1)
+    const found = ownCode(ctx, () => inspectCommand(body, ctx, depth + 1))
     return found && { ...found, detail: `${file} → ${found.detail}` }
   }
   if (!TEST_FILE.test(file) && ctx.isTouched(abs)) return codeRisk(text, file, ctx)
@@ -586,7 +596,7 @@ function checkNpmScript(seg, ctx, depth) {
   if (!name || !scripts[name]) return null
   const child = found.dir === ctx.cwd ? ctx : context({ cwd: found.dir, ...ctx.lists, aliases: ctx.aliases })
   for (const script of [scripts[`pre${name}`], scripts[name], scripts[`post${name}`]].filter(Boolean)) {
-    const inner = inspectCommand(script, child, depth + 1)
+    const inner = ownCode(child, () => inspectCommand(script, child, depth + 1))
     if (inner) return { ...inner, detail: `${seg.verb} ${name} → ${inner.detail}` }
   }
   return null
@@ -598,17 +608,139 @@ function checkAlias(seg, ctx, depth) {
   if (!def || ctx.expanding.has(seg.verb)) return null
   ctx.expanding.add(seg.verb)
   try {
-    const found = inspectCommand(expand(def, seg.argv.slice(1)), ctx, depth + 1)
+    const found = ownCode(ctx, () => inspectCommand(expand(def, seg.argv.slice(1)), ctx, depth + 1))
     return found && { ...found, detail: `${seg.argv[0]} (${def.kind} in ${tilde(def.file)}) → ${found.detail}` }
   } finally {
     ctx.expanding.delete(seg.verb)
   }
 }
 
+// Text that only becomes a command when it runs: base64 (powershell -EncodedCommand, base64 -d, b64decode,
+// atob), eval or iex of a variable, output piped into a shell. What can be known is checked as if Codex
+// had typed it; what can't be known asks, but only when Codex typed it: in your scripts, package.json
+// and profile, `iex $cmd` is your code's own logic.
+const DECODES = /base64|b64decode|\batob\b|(?:^|\s)[-/]e(?:c|n[a-z]*)?\s+["']?[A-Za-z0-9+/]{12}/i
+const BLOB = /(?<![\w+/=.-])[A-Za-z0-9+/]{12,}={0,2}(?![\w+/=.-])/g
+const EVAL = /^(eval|iex|invoke-expression)$/
+const SHELLS = /^(sh|bash|zsh|dash|ksh|fish|pwsh|powershell|iex|invoke-expression)$/
+const CODE_STDIN = /^(python3?|py|node|deno|bun|ruby|perl|php)$/
+const STDIN_ARGS = /^(-|--|-s|-i|-l|-u|-x|-e|-noprofile|-nop|-nologo|-noninteractive|-noni|-command|-c|-executionpolicy|-ep|bypass|unrestricted)$/i
+// Tools whose output is meant to be run: eval "$(ssh-agent -s)", eval "$(fnm env)", conda shell.powershell hook | Out-String | iex.
+const SETUP = /^(ssh-agent|keychain|gpg-agent|dircolors|fnm|nvm|volta|pyenv|rbenv|nodenv|goenv|jenv|direnv|asdf|mise|rtx|conda|mamba|micromamba|brew|zoxide|starship|oh-my-posh|opam|thefuck|atuin|uv|poetry|pdm|pixi)$/
+const FETCH = /^(curl|wget|iwr|invoke-webrequest|irm|invoke-restmethod)$/
+// sh -c "$(…)", eval "$(…)", iex $(…), source <(…), bash <(…); and sh -c "$CMD".
+const RUNS_OUTPUT = /(?:\b(?:eval|iex|invoke-expression)|\b(?:sh|bash|zsh|dash|ksh)(?:\.exe)?(?:\s+-\w+)*\s+-c)\s+["']?\$(?=\()|(?:^|[\s;&|(])(?:source|\.|sh|bash|zsh)\s+<(?=\()/gi
+const RUNS_VARIABLE = /\b(?:sh|bash|zsh|dash|ksh)(?:\.exe)?(?:\s+-\w+)*\s+-c\s+["']?\$\{?\w+\}?["']?(?:\s|$)/i
+const show = text => clip(String(text).replace(/\s+/g, ' ').trim(), 80)
+const hidden = (ctx, detail) => (ctx.reading ? null : { rule: 'hidden', severity: 'high', detail })
+const ownCode = (ctx, fn) => {
+  ctx.reading++
+  try {
+    return fn()
+  } finally {
+    ctx.reading--
+  }
+}
+
+// The text inside a base64 literal (UTF-8, or UTF-16LE as -EncodedCommand uses), or null if it isn't text.
+export function decodeBase64(blob) {
+  const bare = String(blob).trim().replace(/=+$/, '')
+  if (!/^[A-Za-z0-9+/]+$/.test(bare) || bare.length % 4 === 1) return null
+  const padded = bare.padEnd(Math.ceil(bare.length / 4) * 4, '=')
+  const bytes = Buffer.from(padded, 'base64')
+  if (bytes.toString('base64') !== padded) return null
+  for (const encoding of bytes.length % 2 ? ['utf8'] : ['utf8', 'utf16le']) {
+    const text = bytes.toString(encoding)
+    if (/\S/.test(text) && text.replace(/[^\t\n\r\x20-\x7e]/g, '').length >= text.length * 0.9) return text
+  }
+  return null
+}
+
+// powershell -EncodedCommand UgBlAG0A…, echo cm0g… | base64 -d | sh, python -c "exec(b64decode('…'))".
+function checkDecoded(command, ctx, depth) {
+  if (!DECODES.test(command)) return null
+  for (const [blob] of command.matchAll(BLOB)) {
+    const text = decodeBase64(blob)
+    const found = text && (inspectCommand(text, ctx, depth + 1) || codeRisk(text, 'it', ctx))
+    if (found) return { ...found, detail: `base64 ${clip(blob, 13)} decodes to "${show(text)}" → ${found.detail}`, command: command.slice(0, 300) }
+  }
+  return null
+}
+
+// What a pipeline prints, when that is known without running it: echo 'text' (maybe through base64 -d), cat file.
+function printed(segs, ctx) {
+  const [first, ...rest] = segs
+  let text = null
+  const args = first.argv.slice(1).filter(a => !/^-(n|e|E|raw)$/i.test(a))
+  if (/^(echo|printf|write-output)$/.test(first.verb)) text = args.join(' ')
+  else if (/^(cat|type|get-content|gc)$/.test(first.verb) && args.length === 1) {
+    try {
+      if (statSync(ctx.abs(args[0])).size <= 256 * 1024) text = readText(ctx.abs(args[0]), null)
+    } catch {}
+  }
+  for (const seg of rest) {
+    if (text == null) break
+    if (seg.verb === 'base64' && seg.argv.some(a => /^(-d|-D|--decode)$/.test(a))) text = decodeBase64(text)
+    else if (!/^(out-string|oss)$/.test(seg.verb)) text = null
+  }
+  return text
+}
+
+// `how` (a shell) runs whatever `segs` print: checked when that is known, asked when it isn't.
+function runsOutput(segs, how, ctx, depth) {
+  if (!segs.length) return null
+  const from = show(segs.map(s => s.text).join(' | '))
+  const origin = verbOf(segs[0].argv.find(a => !/^[(&]+$/.test(a))?.replace(/^[(&]+/, ''))
+  if (FETCH.test(origin)) return { rule: 'remote-exec', severity: 'high', detail: `${how} runs what ${from} downloads` }
+  if (SETUP.test(origin) || segs[0].argv.includes('completion')) return null
+  const text = printed(segs, ctx)
+  if (text == null) return hidden(ctx, `${how} runs the output of ${from}, only known when it runs`)
+  const found = inspectCommand(text, ctx, depth + 1)
+  return found && { ...found, detail: `${how} runs "${show(text)}" → ${found.detail}` }
+}
+
+function checkRunsOutput(command, ctx, depth) {
+  for (const m of command.matchAll(RUNS_OUTPUT)) {
+    const inner = enclosed(command, m.index + m[0].length)
+    const how = m[0].replace(/^[\s;&|(]+|["'$<]+$/g, '').trim()
+    const found = inner == null ? hidden(ctx, `${how} runs text only known when it runs`) : runsOutput(segments(inner), how, ctx, depth)
+    if (found) return { ...found, command: command.slice(0, 300), targets: found.targets ?? [] }
+  }
+  const variable = RUNS_VARIABLE.exec(command)
+  const found = variable && hidden(ctx, `${show(variable[0])} runs a variable, only known when it runs`)
+  return found && { ...found, command: command.slice(0, 300) }
+}
+
+// eval "rm -rf src" runs its text; eval "$CMD" and iex $script run text only known when they run;
+// … | bash runs what comes down the pipe; powershell -EncodedCommand runs base64 (decoded in checkDecoded).
+function checkRunsText(seg, ctx, depth) {
+  const args = seg.argv.slice(1)
+  if (EVAL.test(seg.verb) && args.length) {
+    const code = args.filter(a => !/^-command$/i.test(a)).join(' ')
+    if (code.startsWith('$(')) return null // the whole command was checked (checkRunsOutput)
+    if (/[$`(]/.test(code)) return hidden(ctx, `${seg.verb} runs ${show(code)}, text only known when it runs`)
+    const found = inspectCommand(code, ctx, depth + 1)
+    return found && { ...found, detail: `${seg.verb} runs "${show(code)}" → ${found.detail}` }
+  }
+  if (/^(powershell|pwsh)$/.test(seg.verb)) {
+    const i = args.findIndex(a => /^[-/]ec$/i.test(a) || (/^[-/]e/i.test(a) && 'encodedcommand'.startsWith(a.slice(1).toLowerCase())))
+    if (i !== -1 && !decodeBase64(args[i + 1] || '')) return hidden(ctx, `${seg.verb} ${args[i]} runs base64 that is not readable text`)
+  }
+  if (!seg.fed || !seg.source || !args.every(a => STDIN_ARGS.test(a))) return null
+  const chain = []
+  for (let s = seg; s.fed && s.source; s = s.source) chain.unshift(s.source)
+  if (SHELLS.test(seg.verb)) return runsOutput(chain, seg.verb, ctx, depth)
+  // Code piped into python or node is checked when it is known (echo, cat); a here-string isn't seen here.
+  const text = CODE_STDIN.test(seg.verb) && printed(chain, ctx)
+  return text ? codeRisk(text, `${seg.verb} from the pipe`, ctx) : null
+}
+
 function inspectCommand(command, ctx, depth) {
   if (depth > 3) return null
   if (REMOTE_EXEC.test(command)) return { rule: 'remote-exec', severity: 'high', detail: command.slice(0, 200), command: command.slice(0, 300) }
   if (ENV_WRITE.test(command)) return { rule: 'global-config', severity: 'high', detail: 'sets a user or machine environment variable', command: command.slice(0, 300) }
+  const runtime = checkDecoded(command, ctx, depth) || checkRunsOutput(command, ctx, depth)
+  if (runtime) return runtime
   for (const seg of segments(command)) {
     const found =
       checkDelete(seg, ctx) ||
@@ -620,6 +752,7 @@ function inspectCommand(command, ctx, depth) {
       checkInline(seg, ctx) ||
       checkScript(seg, ctx, depth) ||
       checkNpmScript(seg, ctx, depth) ||
+      checkRunsText(seg, ctx, depth) ||
       checkAlias(seg, ctx, depth)
     // What Codex ran is the outer command; the detail tells what it leads to.
     if (found) return { ...found, command: seg.text.slice(0, 300), targets: pathArgs(seg.argv) }
@@ -667,6 +800,7 @@ const ASKS = {
   infra: /deploy|despl|publi|destro|destru|apply|delete|elimin|borr|prod|release|lanz|submit/iu,
   system: /regist|disk|disco|format|apag|reinic|shutdown|restart|permis|firewall|defender|antivirus|pol[ií]tica|policy|restaur|restore/iu,
   'remote-exec': /descarg|download|instal|script|ejecut|\brun\b|curl|iwr|irm|iex/iu,
+  hidden: /escond|ocult|codific|base64|eval|iex|invoke-expression|ejecut|corr|\brun\b|hidden|encod|decod/iu,
   kill: /cerr|termin|\bmat|kill|stop|deten|proces|taskkill/iu,
   'global-config': /global|config|identidad|identity|registr|variable|entorno|environment|setx|npmrc/iu
 }

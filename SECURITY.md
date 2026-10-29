@@ -14,7 +14,8 @@ It inspects every command and patch before it runs, including:
 - `.ps1` and `.sh` scripts;
 - `package.json` scripts;
 - code that Codex wrote earlier in the session and then runs;
-- your shell aliases and functions (`nuke tmp` when `nuke` is `rm -rf`).
+- your shell aliases and functions (`nuke tmp` when `nuke` is `rm -rf`);
+- base64 it can decode (`-EncodedCommand`, `base64 -d`). Text built at runtime (`eval "$CMD"`, `… | bash`) asks first.
 
 **It is not a sandbox, and it does not protect against a malicious agent.** It reads command text with heuristics, so a sufficiently indirect program can get past it. Use it alongside Codex's sandbox and approvals, not instead of them.
 

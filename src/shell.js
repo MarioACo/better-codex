@@ -41,6 +41,26 @@ export function extractWorkdir(toolInput, fallback) {
   return m ? unquote(m[1]) : fallback
 }
 
+// The text between the { or ( at `open` and its match, skipping quoted strings and # comments.
+export function enclosed(text, open) {
+  const [start, end] = text[open] === '(' ? '()' : '{}'
+  let depth = 0
+  let quote = null
+  for (let i = open; i < text.length && i - open < 20000; i++) {
+    const c = text[i]
+    if (quote) {
+      if (c === quote && (quote === "'" || !/[\\`]/.test(text[i - 1]))) quote = null
+    } else if (c === '"' || c === "'") quote = c
+    else if (c === '#' && /\s/.test(text[i - 1] ?? ' ')) {
+      const eol = text.indexOf('\n', i)
+      if (eol === -1) return null
+      i = eol
+    } else if (c === start) depth++
+    else if (c === end && --depth === 0) return text.slice(open + 1, i)
+  }
+  return null
+}
+
 export function tokenize(text) {
   return [...text.matchAll(/"([^"]*)"|'([^']*)'|(\S+)/g)].map(m => m[1] ?? m[2] ?? m[3])
 }

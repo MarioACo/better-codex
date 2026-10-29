@@ -14,7 +14,8 @@ Revisa cada comando y parche antes de que corran, incluidos:
 - los scripts `.ps1` y `.sh`;
 - los scripts de `package.json`;
 - el código que Codex escribió antes en la sesión y luego ejecuta;
-- tus alias y funciones de la terminal (`nuke tmp` cuando `nuke` es `rm -rf`).
+- tus alias y funciones de la terminal (`nuke tmp` cuando `nuke` es `rm -rf`);
+- el base64 que puede decodificar (`-EncodedCommand`, `base64 -d`). El texto que se arma al correr (`eval "$CMD"`, `… | bash`) pregunta antes.
 
 **No es un sandbox, y no protege contra un agente malicioso.** Analiza el texto de los comandos con heurísticas, así que un programa lo bastante indirecto puede pasar. Úsalo junto con el sandbox y las aprobaciones de Codex, no en su lugar.
 

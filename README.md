@@ -177,6 +177,7 @@ The **guard** inspects every command and patch before it runs. It doesn't stop a
 - `node -e` and `python -c` code;
 - scripts Codex wrote earlier in the session before running them;
 - your aliases and functions: if your PowerShell profile, `.bashrc` or `.zshrc` says `nuke` is `rm -rf`, `nuke tmp` is checked as `rm -rf tmp`. They are read as text, so nothing in your profile runs; aliases that plugins create on startup (oh-my-zsh, PowerShell modules) aren't seen. `bcx doctor` lists the ones it found.
+- base64: `powershell -EncodedCommand …`, `… | base64 -d | bash` or `b64decode` inside `python -c` is decoded and checked like any other command.
 
 It stops on:
 
@@ -189,6 +190,7 @@ It stops on:
 - **Killing programs by name**: `taskkill /IM chrome.exe`, `Stop-Process -Name node` and `pkill java` also close your own windows and servers. Killing by PID doesn't ask.
 - **Your global configuration**: `git config --global …` (your identity), `npm config set`, `setx`, user or machine environment variables.
 - **The system**: formatting disks, the Windows registry, deleting restore points, turning off the antivirus or firewall, shutting down, `curl … | bash`.
+- **Commands only known when they run**: `eval "$CMD"`, `iex $script`, another command's output piped into `bash` or `iex`. It doesn't ask for setup lines meant to be run that way, such as `eval "$(ssh-agent -s)"` or `conda shell.powershell hook | Out-String | iex`, nor for `iex $x` inside your own scripts.
 
 **How approval works.** A yes is valid for one action, in one turn:
 
@@ -309,7 +311,7 @@ This removes the hooks, the `AGENTS.md` block, the marketplace and the installed
 ## Development
 
 ```bash
-npm test                       # 96 tests with node:test, no dependencies
+npm test                       # 97 tests with node:test, no dependencies
 npm run check                  # tests + offline doctor
 node scripts/codex-compat.mjs  # against your real Codex binary: no login, no model calls
 node bench/run.mjs             # the benchmark (uses your Codex quota)
