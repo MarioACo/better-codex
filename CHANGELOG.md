@@ -2,6 +2,12 @@
 
 **English** · [Español](CHANGELOG.es.md)
 
+## 0.3.1 — 2026-10-30
+
+Fix:
+
+- **Review and focused tests through a symlink**: when the repo was opened through another spelling of its path (macOS `/var` → `/private/var`, a symlink or junction, Windows short names such as `RUNNER~1`), the review of what a change left behind and the focused tests found nothing. Both sides are now resolved to the real path, as the guard already did. Seen in CI on macOS and Windows.
+
 ## 0.3.0 — 2026-10-29
 
 More efficient, safer, better answers:
@@ -15,7 +21,6 @@ More efficient, safer, better answers:
 - **`bcx undo` for more**: the old value of a `git config --global` key or a Windows user variable, `~/.npmrc`, and local SQLite databases before an approved `DROP` or reset.
 - **`bcx allow` offered** the third time you approve the same action in a repo.
 - **Install**: the command it prints to open Codex adds `--no-daemon` for the CLI inside the editor extensions too. Since the VS Code extension 26.1021 it fails without it ("this CLI has no complete local package"), like the desktop app's.
-- **Review and focused tests through a symlink**: when the repo was opened through another spelling of its path (macOS `/var` → `/private/var`, a symlink or junction, Windows short names such as `RUNNER~1`), the review of what a change left behind and the focused tests found nothing. Both sides are now resolved to the real path, as the guard already did. Seen in CI on macOS and Windows.
 - **Benchmark, 0.3.0** (3 tasks × 3 runs, Codex closed during the runs): a production Dockerfile done right 0/3 → 3/3 (plain Codex left out the `.dockerignore` every time); a migration on a table with data at half the input and requests and 134 s → 42 s; the slow test suite 171K → 63K input tokens. Average input −40%, uncached −33%, requests −33%.
 
 Infrastructure, databases, DevOps and strict mode:

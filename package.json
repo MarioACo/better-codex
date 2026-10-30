@@ -1,6 +1,6 @@
 {
   "name": "@marioaco/better-codex",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Hooks, skills and metrics that make OpenAI Codex spend fewer tokens, answer better and ask before anything destructive.",
   "type": "module",
   "license": "MIT",
