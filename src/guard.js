@@ -1,6 +1,6 @@
-import { existsSync, realpathSync, statSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { expand, shellAliases, snapshotFile, tilde } from './aliases.js'
 import { allowedFor, allowFile } from './allow.js'
 import { configPath } from './config.js'
@@ -8,7 +8,7 @@ import { gitRoot } from './git.js'
 import { KINDS } from './infra.js'
 import { codexHome } from './paths.js'
 import { enclosed, pathArgs, patchFiles, segments, shellWrites, toolCommands, verbOf } from './shell.js'
-import { clip, readJson, readText, run, toPosix } from './util.js'
+import { clip, readJson, readText, real, run, toPosix } from './util.js'
 import { VERIFY, withoutExt } from './verify.js'
 
 // What each rule protects, in the words shown to you (es/en) and to the model (en).
@@ -334,16 +334,6 @@ function context({ cwd, created = [], touched = [], userDirty = [], aliases, all
     }
   }
   return ctx
-}
-
-// The real path of p, or of its nearest existing parent plus the rest (p may not exist yet).
-function real(p) {
-  try {
-    return toPosix(realpathSync.native(p))
-  } catch {
-    const parent = dirname(p)
-    return parent === p ? toPosix(p) : `${real(parent).replace(/\/$/, '')}/${basename(p)}`
-  }
 }
 
 const inTemp = abs => canon(abs).startsWith(canon(tmpdir()))

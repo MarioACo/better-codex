@@ -1,7 +1,7 @@
 import { statSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve } from 'node:path'
 import { gitFiles, gitRoot } from './git.js'
-import { readJson, readText, run, toPosix } from './util.js'
+import { readJson, readText, real, run, toPosix } from './util.js'
 import { CODE_EXT } from './verify.js'
 
 // What a change leaves behind that nobody asked for, read from the diff without the model: debugging,
@@ -48,11 +48,15 @@ function changedLines(root, files) {
   return out
 }
 
+// A file's path inside the repo. git gives the root's real path; cwd may be another spelling of it
+// (macOS /var → /private/var, Windows C:\Users\RUNNER~1), so both sides are resolved the same way.
+const inRepo = (root, cwd, f) => toPosix(relative(real(root), real(isAbsolute(f) ? f : resolve(cwd, f))))
+
 // [{ file, line, issue }] for the files this turn edited.
 export function reviewChanges(cwd, edited) {
   const root = gitRoot(cwd)
   if (!root || !edited.length) return []
-  const files = [...new Set(edited.map(f => toPosix(relative(root, isAbsolute(f) ? f : resolve(cwd, f)))))].filter(f => f && !f.startsWith('..')).slice(0, 30)
+  const files = [...new Set(edited.map(f => inRepo(root, cwd, f)))].filter(f => f && !f.startsWith('..')).slice(0, 30)
   const found = []
   for (const [file, { added, removed }] of changedLines(root, files)) {
     const code = CODE_EXT.test(file)
@@ -74,7 +78,7 @@ export function focusedTests(cwd, edited, verify) {
   const root = gitRoot(cwd)
   if (!root || !verify) return null
   const all = gitFiles(root)
-  const rel = edited.map(f => toPosix(relative(root, isAbsolute(f) ? f : resolve(cwd, f)))).filter(f => CODE_EXT.test(f))
+  const rel = edited.map(f => inRepo(root, cwd, f)).filter(f => CODE_EXT.test(f))
   const tests = new Set(rel.filter(f => TEST_FILE.test(f)))
   for (const f of rel.filter(f => !TEST_FILE.test(f))) {
     const stem = f.slice(f.lastIndexOf('/') + 1).replace(/\.[^.]+$/, '').toLowerCase()

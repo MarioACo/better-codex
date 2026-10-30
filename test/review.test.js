@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict'
+import { symlinkSync } from 'node:fs'
+import { join } from 'node:path'
 import { test } from 'node:test'
 import { DEFAULTS } from '../src/config.js'
 import { handle } from '../src/hooks.js'
 import { focusedTests, reviewChanges } from '../src/review.js'
-import { isolate, repo, write } from './helpers.js'
+import { isolate, repo, tempDir, write } from './helpers.js'
 
 isolate()
 
@@ -26,6 +28,16 @@ test('review: what a change left behind, counting only what it added', () => {
   const found = reviewChanges(root, ['src/cart.js', 'test/cart.test.js', 'src/new.js', 'README.md']).map(r => `${r.file}:${r.line} ${r.issue}`)
   assert.deepEqual(found.sort(), ['src/cart.js:2 debugger statement', 'src/cart.js:5 new TODO', 'src/new.js:1 debug print', 'test/cart.test.js:2 focused test (only)'])
   // the TODO that was already there and got edited isn't new; a TODO in the README isn't code
+})
+
+test('review: a repo reached through another spelling of its path (macOS /var, Windows short names; failed in CI)', () => {
+  const root = shop()
+  const link = join(tempDir(), 'link')
+  symlinkSync(root, link, 'junction') // a junction needs no admin rights on Windows
+  write(root, { 'src/cart.js': 'export const total = items => {\n  debugger\n  return items.length\n}\n' })
+  assert.deepEqual(reviewChanges(link, ['src/cart.js']), [{ file: 'src/cart.js', line: 2, issue: 'debugger statement' }])
+  assert.deepEqual(reviewChanges(link, [join(link, 'src', 'cart.js')]), [{ file: 'src/cart.js', line: 2, issue: 'debugger statement' }])
+  assert.equal(focusedTests(link, [join(link, 'src', 'cart.js')], 'npm test'), 'node --test test/cart.test.js')
 })
 
 test('review: the tests for the files that changed, with the command that runs only them', () => {

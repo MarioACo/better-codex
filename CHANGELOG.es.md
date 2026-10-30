@@ -15,6 +15,7 @@ Más eficiente, más seguro, mejores respuestas:
 - **`bcx undo` para más**: el valor anterior de una clave de `git config --global` o de una variable de usuario de Windows, `~/.npmrc` y las bases SQLite locales antes de un `DROP` o reset aprobado.
 - **`bcx allow` sugerido** la tercera vez que apruebas la misma acción en un repo.
 - **Instalación**: el comando que imprime para abrir Codex agrega `--no-daemon` también con el CLI de las extensiones de editor. Desde la extensión de VS Code 26.1021 falla sin él («this CLI has no complete local package»), igual que el de la app de escritorio.
+- **Revisión y pruebas enfocadas a través de un enlace**: si el repo se abría con otra forma de escribir su ruta (en macOS `/var` → `/private/var`, un symlink o junction, nombres cortos de Windows como `RUNNER~1`), la revisión de lo que dejó un cambio y las pruebas enfocadas no encontraban nada. Ahora las dos rutas se resuelven a la real, como ya hacía el guard. Se vio en CI en macOS y Windows.
 - **Benchmark de la 0.3.0** (3 tareas × 3 corridas, con Codex cerrado durante las corridas): un Dockerfile de producción bien hecho 0/3 → 3/3 (Codex solo omitió el `.dockerignore` todas las veces); una migración sobre una tabla con datos con la mitad de entrada y de peticiones y 134 s → 42 s; las pruebas lentas de 171K a 63K tokens de entrada. En promedio: entrada −40%, sin caché −33%, peticiones −33%.
 
 Infraestructura, bases de datos, DevOps y modo estricto:
