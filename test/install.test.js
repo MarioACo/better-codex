@@ -88,11 +88,15 @@ test('install refuses to overwrite a hooks.json it cannot parse', () => {
   assert.equal(readFileSync(join(home, 'hooks.json'), 'utf8'), '{ broken')
 })
 
-test('the TUI command adds --no-daemon only for the CLI bundled with the desktop app', () => {
+test('the TUI command adds --no-daemon for the CLIs bundled with the desktop app and the editor extensions', () => {
   assert.equal(tuiCommand({ bin: 'codex' }), 'codex')
   assert.equal(tuiCommand(null), 'codex')
   const bundled = tuiCommand({ bin: join('C:', 'Users', 'Juan Pérez', '.codex', '.sandbox-bin', 'codex.exe') })
   assert.match(bundled, /"[^"]*Juan Pérez[^"]*codex\.exe" --no-daemon$/)
+  // seen live with the VS Code extension 26.1021: "this CLI has no complete local package" without it
+  const extension = join('C:', 'Users', 'x', '.vscode', 'extensions', 'openai.chatgpt-26.1021.22027-win32-x64', 'bin', 'windows-x86_64', 'codex.exe')
+  assert.match(tuiCommand({ bin: extension }), /codex\.exe" --no-daemon$/)
+  assert.equal(tuiCommand({ bin: join('C:', 'tools', 'codex', 'codex.exe') }).endsWith('--no-daemon'), false)
 })
 
 test('trusting hooks writes [hooks.state] to config.toml: that is not a second set of hooks', () => {
@@ -155,8 +159,7 @@ test('finds the Codex CLI inside the VS Code, Cursor or Windsurf extension, newe
   mkdirSync(join(home, '.windsurf/extensions/someone.else-1.0.0/bin/x'), { recursive: true })
   assert.deepEqual(extensionCodex(home), [newest, cursor, old])
   assert.deepEqual(extensionCodex(tempDir()), [])
-  // the extension's CLI is complete: no --no-daemon needed to open /hooks
-  assert.doesNotMatch(tuiCommand({ bin: newest }), /--no-daemon/)
-  assert.match(tuiCommand({ bin: newest }), /codex(\.exe)?"$/)
+  // since 26.10 the extension's CLI opens /hooks only with --no-daemon, like the desktop app's
+  assert.match(tuiCommand({ bin: newest }), /codex(\.exe)?" --no-daemon$/)
   assert.equal(tuiCommand({ bin: 'cmd.exe', prefix: ['/d', '/s', '/c', 'codex'] }), 'codex')
 })

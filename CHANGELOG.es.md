@@ -14,6 +14,7 @@ Más eficiente, más seguro, mejores respuestas:
 - **Herramientas MCP en el guard** (seguridad). SQL destructivo por un servidor de base de datos, y herramientas que borran, hacen merge, push, publican, despliegan, cobran o mandan mensajes, preguntan antes. Leer pasa. **`hooks.json` cambia: aprueba los hooks otra vez en `/hooks`.**
 - **`bcx undo` para más**: el valor anterior de una clave de `git config --global` o de una variable de usuario de Windows, `~/.npmrc` y las bases SQLite locales antes de un `DROP` o reset aprobado.
 - **`bcx allow` sugerido** la tercera vez que apruebas la misma acción en un repo.
+- **Instalación**: el comando que imprime para abrir Codex agrega `--no-daemon` también con el CLI de las extensiones de editor. Desde la extensión de VS Code 26.1021 falla sin él («this CLI has no complete local package»), igual que el de la app de escritorio.
 - **Benchmark de la 0.3.0** (3 tareas × 3 corridas, con Codex cerrado durante las corridas): un Dockerfile de producción bien hecho 0/3 → 3/3 (Codex solo omitió el `.dockerignore` todas las veces); una migración sobre una tabla con datos con la mitad de entrada y de peticiones y 134 s → 42 s; las pruebas lentas de 171K a 63K tokens de entrada. En promedio: entrada −40%, sin caché −33%, peticiones −33%.
 
 Infraestructura, bases de datos, DevOps y modo estricto:

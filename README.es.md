@@ -112,13 +112,13 @@ npx @marioaco/better-codex doctor   # «Lo que Codex ha enviado de verdad» debe
 Las dos traen un CLI de Codex, pero no está en tu `PATH`. Ábrelo de alguna de estas formas:
 
 ```powershell
-# El CLI que trae la app de escritorio necesita --no-daemon
+# Los dos CLI necesitan --no-daemon para abrir Codex
 # (si no: «this CLI has no complete local package»)
 & "$env:USERPROFILE\.codex\.sandbox-bin\codex.exe" --no-daemon   # Windows
 ~/.codex/.sandbox-bin/codex --no-daemon                          # macOS / Linux
 
-# La extensión de VS Code trae un CLI completo
-~/.vscode/extensions/openai.chatgpt-<versión>-<plataforma>/bin/<plataforma>/codex
+# El de la extensión de VS Code (también Cursor y Windsurf)
+~/.vscode/extensions/openai.chatgpt-<versión>-<plataforma>/bin/<plataforma>/codex --no-daemon
 ```
 
 </details>
@@ -308,7 +308,7 @@ bcx config reset
 | Ves | Haz esto |
 | --- | --- |
 | `bcx doctor`: «Codex aún no los ejecuta» | Aprueba los hooks en `/hooks` y escribe un prompt. Hasta que lo hagas, Codex se los salta sin avisar. |
-| «this CLI has no complete local package» | El CLI que trae la app de escritorio necesita `--no-daemon`; o usa el de la extensión de VS Code (ver [Empieza en un minuto](#empieza-en-un-minuto)). |
+| «this CLI has no complete local package» | Los CLI que traen la app de escritorio y las extensiones de editor necesitan `--no-daemon` (ver [Empieza en un minuto](#empieza-en-un-minuto)). `install` imprime el comando exacto. |
 | `codex exec`: «Code Mode is unavailable … host executable was not found» | Es el CLI de la app de escritorio, al que le falta el host de code mode. Usa el `codex` de la extensión de VS Code, que sí lo trae. |
 | El guard detuvo algo inofensivo | `bcx guard "<comando>"` explica por qué. Los falsos positivos son bugs: por favor [abre un issue](https://github.com/MarioACo/better-codex/issues). |
 | `bcx doctor`: «marketplace not registered» | Una ventana de Codex en la terminal abierta por horas puede reescribir `config.toml` con una copia vieja y borrarlo (visto con Codex 0.164). Cierra esa ventana y vuelve a correr `bcx install`: registra otra vez los skills, y tu aprobación de los hooks sigue válida. |

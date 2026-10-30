@@ -210,7 +210,9 @@ export const runCodex = (codex, args, timeout = 60000) => run(codex.bin, [...(co
 // desktop app refuses to start without its background server unless given --no-daemon.
 export function tuiCommand(codex) {
   if (!codex || codex.prefix || !/[\\/]/.test(codex.bin)) return 'codex'
-  const flag = /[\\/]\.sandbox-bin[\\/]/.test(codex.bin) ? ' --no-daemon' : ''
+  // The CLIs bundled with the desktop app and with the editor extensions (since 26.10) open their TUI only
+  // with --no-daemon: "this CLI has no complete local package". A packaged CLI on PATH doesn't need it.
+  const flag = /[\\/]\.sandbox-bin[\\/]|[\\/]extensions[\\/]openai\.chatgpt-/.test(codex.bin) ? ' --no-daemon' : ''
   return process.platform === 'win32' ? `& "${codex.bin}"${flag}` : `"${codex.bin}"${flag}`
 }
 

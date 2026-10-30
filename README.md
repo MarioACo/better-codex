@@ -112,13 +112,13 @@ npx @marioaco/better-codex doctor   # "What Codex has actually sent" should list
 Both include a Codex CLI, but it isn't on your `PATH`. Open it in one of these ways:
 
 ```powershell
-# The CLI that ships with the desktop app needs --no-daemon
+# Both CLIs need --no-daemon to open Codex
 # (without it: "this CLI has no complete local package")
 & "$env:USERPROFILE\.codex\.sandbox-bin\codex.exe" --no-daemon   # Windows
 ~/.codex/.sandbox-bin/codex --no-daemon                          # macOS / Linux
 
-# The VS Code extension ships a complete CLI
-~/.vscode/extensions/openai.chatgpt-<version>-<platform>/bin/<platform>/codex
+# The one in the VS Code extension (Cursor and Windsurf too)
+~/.vscode/extensions/openai.chatgpt-<version>-<platform>/bin/<platform>/codex --no-daemon
 ```
 
 </details>
@@ -308,7 +308,7 @@ bcx config reset
 | You see | Do this |
 | --- | --- |
 | `bcx doctor`: "Codex has not run them yet" | Trust the hooks in `/hooks`, then send a prompt. Until you do, Codex skips them silently. |
-| "this CLI has no complete local package" | The CLI that ships with the desktop app needs `--no-daemon`, or use the one in the VS Code extension (see [Quick start](#quick-start)). |
+| "this CLI has no complete local package" | The CLIs that ship with the desktop app and the editor extensions need `--no-daemon` (see [Quick start](#quick-start)). `install` prints the exact command. |
 | `codex exec`: "Code Mode is unavailable … host executable was not found" | That's the desktop app's CLI, which is missing the code-mode host. Use the VS Code extension's `codex`, which includes it. |
 | The guard stopped something harmless | `bcx guard "<command>"` explains why. False positives are bugs: please [open an issue](https://github.com/MarioACo/better-codex/issues). |
 | `bcx doctor`: "marketplace not registered" | A Codex terminal left open for hours can rewrite `config.toml` from an old copy and drop it (seen with Codex 0.164). Close that window and run `bcx install` again: it registers the skills again, and your trust in the hooks stays valid. |
