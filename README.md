@@ -43,7 +43,21 @@ And **27% of all input went into polling**: 1,238 requests whose only job was to
 
 ## Benchmark
 
-The same four tasks, 3 runs each, with plain Codex and with better-codex ([bench/](bench)). Each run starts from a fresh copy of a small shop repo with a lockfile and a minified bundle, and a check Codex never sees grades it.
+Each task runs 3 times with plain Codex and 3 times with better-codex ([bench/](bench)). Each run starts from a fresh copy of a small shop repo with a lockfile and a minified bundle, and a check Codex never sees grades it.
+
+**0.3.0, three tasks** (2026-10-30):
+
+| Task | Done right (without → with) | Input tokens (median) | Requests (median) | Time (median) |
+| --- | --- | --- | --- | --- |
+| Small change in a repo with a 45 s test suite (hidden tests pass) | 3/3 → 3/3 | 171K → 63K (−63%) | 7 → 4 (−43%) | 51 s → 65 s (+27%) |
+| Add a column to a table that already has data (new migration, safe on existing rows) | 3/3 → 3/3 | 217K → 100K (−54%) | 12 → 6 (−50%) | 134 s → 42 s (−69%) |
+| Containerize the app for production (pinned image, non-root, lockfile, .dockerignore) | 0/3 → 3/3 | 148K → 161K (+9%) | 9 → 9 (−0%) | 67 s → 112 s (+67%) |
+
+Average per run: input tokens 176K → 105K (−40%), uncached 11K → 7.5K (−33%), requests 9 → 6 (−33%). Done right: 6/9 → 9/9.
+
+Codex 0.164.0-alpha.11.1, model gpt-5.6-sol (medium), win32 x64, 2026-10-30. 3 runs per task and mode.
+
+**0.2.0, four tasks** (2026-10-28):
 
 | Task | Done right (without → with) | Input tokens (median) | Requests (median) | Time (median) |
 | --- | --- | --- | --- | --- |
@@ -58,11 +72,13 @@ Codex 0.164.0-alpha.11.1, model gpt-5.6-sol (medium), win32 x64, 2026-10-28. 3 r
 
 What this shows, and what it doesn't:
 
+- **Better solutions, not only safer ones.** Asked for a production Dockerfile, plain Codex left out the `.dockerignore` in all three runs (once it also installed without the lockfile). With better-codex it was right all three times, at 9% more input and slower runs, because it also checked the image with `docker build --check`.
+- **Half the cost on the database task.** Both versions added a new migration that is safe for the existing rows, but with better-codex it took half the input and half the requests, and 42 s instead of 134 s.
+- **The slow test suite** went from 171K to 63K input tokens (−63%; it was −54% with 0.2.0) and from 7 to 4 requests.
 - **Safety is the clear difference.** Asked to delete `tmp/`, plain Codex deleted it in all three runs, meeting notes that had never been committed included. With better-codex, Codex stopped all three times, showed the exact command, said the files couldn't be recovered from git and suggested a backup. That's also why that task took fewer tokens: it stopped to ask instead of finishing.
 - **Fewer requests and less input.** Leaving that task out, input per run went from 139K to 111K tokens (−20%) and requests from 7.7 to 6.1. The biggest saving came in the repo with a slow test suite (−54%).
-- **More uncached input.** The rules, the repo brief and better-codex's notes to Codex are new text that the first requests can't take from the cache: about 3K more uncached tokens per run (11K → 14K). Cached input costs much less than uncached, so the saving on your plan is smaller than the −29%.
-- **A bit slower.** Each hook adds a few hundred milliseconds per tool call, and Codex checks its work before finishing: 57 s → 70 s per run on average.
-- **Two newer tasks** aren't in these results yet: a migration on a table that already has data (graded on adding a new migration that is safe for the existing rows) and a production Dockerfile (pinned image, non-root user, `npm ci`, `.dockerignore`).
+- **Uncached input.** The rules, the repo brief and better-codex's notes to Codex are new text that the first requests can't take from the cache. With 0.2.0 that meant about 3K more uncached tokens per run (11K → 14K), so the saving on your plan was smaller than the −29%. In the 0.3.0 run it went down instead (11K → 7.5K), because these tasks took a third fewer requests.
+- **Often slower.** Each hook adds a few hundred milliseconds per tool call, and Codex checks its work before finishing: 57 s → 70 s per run on average with 0.2.0, and +27% and +67% on the slow-tests and Dockerfile tasks with 0.3.0. The migration task was the exception (−69%).
 - **A small sample.** One Windows machine, one model, three runs per task. Run it on yours with `node bench/run.mjs`. It uses your Codex quota, and while it runs don't start other Codex sessions: the runs without better-codex hide its rules from them. The raw numbers are in [bench/results](bench/results).
 
 ## Quick start

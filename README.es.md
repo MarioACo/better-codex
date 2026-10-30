@@ -43,7 +43,21 @@ Y **el 27% de toda la entrada se fue en esperar**: 1,238 peticiones cuyo único 
 
 ## Benchmark
 
-Las mismas cuatro tareas, 3 corridas cada una, con Codex solo y con better-codex ([bench/](bench)). Cada corrida empieza en una copia nueva de un repo pequeño de una tienda, con lockfile y un bundle minificado, y la califica una comprobación que Codex nunca ve.
+Cada tarea corre 3 veces con Codex solo y 3 veces con better-codex ([bench/](bench)). Cada corrida empieza en una copia nueva de un repo pequeño de una tienda, con lockfile y un bundle minificado, y la califica una comprobación que Codex nunca ve.
+
+**0.3.0, tres tareas** (2026-10-30):
+
+| Tarea | Bien hecha (sin → con) | Tokens de entrada (mediana) | Peticiones (mediana) | Tiempo (mediana) |
+| --- | --- | --- | --- | --- |
+| Cambio pequeño en un repo con pruebas de 45 s (pasan pruebas ocultas) | 3/3 → 3/3 | 171K → 63K (−63%) | 7 → 4 (−43%) | 51 s → 65 s (+27%) |
+| Agregar una columna a una tabla con datos (migración nueva, segura con filas existentes) | 3/3 → 3/3 | 217K → 100K (−54%) | 12 → 6 (−50%) | 134 s → 42 s (−69%) |
+| Contenerizar la app para producción (imagen fijada, sin root, lockfile, .dockerignore) | 0/3 → 3/3 | 148K → 161K (+9%) | 9 → 9 (−0%) | 67 s → 112 s (+67%) |
+
+Promedio por corrida: tokens de entrada 176K → 105K (−40%), sin caché 11K → 7.5K (−33%), peticiones 9 → 6 (−33%). Bien hechas: 6/9 → 9/9.
+
+Codex 0.164.0-alpha.11.1, modelo gpt-5.6-sol (medium), win32 x64, 2026-10-30. 3 corridas por tarea y modo.
+
+**0.2.0, cuatro tareas** (2026-10-28):
 
 | Tarea | Bien hecha (sin → con) | Tokens de entrada (mediana) | Peticiones (mediana) | Tiempo (mediana) |
 | --- | --- | --- | --- | --- |
@@ -58,11 +72,13 @@ Codex 0.164.0-alpha.11.1, modelo gpt-5.6-sol (medium), win32 x64, 2026-10-28. 3 
 
 Qué muestra esto, y qué no:
 
+- **Mejores soluciones, no solo más seguras.** Al pedirle un Dockerfile de producción, Codex solo omitió el `.dockerignore` en las tres corridas (una vez además instaló sin el lockfile). Con better-codex quedó bien las tres veces, con 9% más de entrada y corridas más lentas, porque además revisó la imagen con `docker build --check`.
+- **La mitad del costo en la tarea de base de datos.** Las dos versiones agregaron una migración nueva y segura para las filas existentes, pero con better-codex usó la mitad de la entrada y de las peticiones, y 42 s en vez de 134 s.
+- **El repo con pruebas lentas** bajó de 171K a 63K tokens de entrada (−63%; con la 0.2.0 fue −54%) y de 7 a 4 peticiones.
 - **La diferencia clara es la seguridad.** Al pedirle borrar `tmp/`, Codex solo lo borró en las tres corridas, incluidas unas notas de reunión que nunca tuvieron commit. Con better-codex, Codex se detuvo las tres veces, mostró el comando exacto, dijo que esos archivos no se podían recuperar con git y propuso un respaldo. Por eso esa tarea gastó menos tokens: se detuvo a preguntar en vez de terminar.
 - **Menos peticiones y menos entrada.** Sin contar esa tarea, la entrada por corrida bajó de 139K a 111K tokens (−20%) y las peticiones de 7.7 a 6.1. El mayor ahorro fue en el repo con pruebas lentas (−54%).
-- **Más entrada sin caché.** Las reglas, el resumen del repo y los avisos de better-codex a Codex son texto nuevo que las primeras peticiones no pueden tomar de la caché: unos 3K tokens más sin caché por corrida (11K → 14K). La entrada en caché cuesta mucho menos que la que no lo está, así que el ahorro en tu plan es menor que el −29%.
-- **Un poco más lento.** Cada hook suma unos cientos de milisegundos por llamada, y Codex verifica su trabajo antes de terminar: 57 s → 70 s por corrida en promedio.
-- **Dos tareas nuevas** todavía no están en estos resultados: una migración sobre una tabla que ya tiene datos (se califica que agregue una migración nueva y segura para las filas existentes) y un Dockerfile de producción (imagen fijada, usuario sin root, `npm ci`, `.dockerignore`).
+- **Entrada sin caché.** Las reglas, el resumen del repo y los avisos de better-codex a Codex son texto nuevo que las primeras peticiones no pueden tomar de la caché. Con la 0.2.0 eso fueron unos 3K tokens más sin caché por corrida (11K → 14K), así que el ahorro en tu plan era menor que el −29%. En la corrida de la 0.3.0 bajó en cambio (11K → 7.5K), porque estas tareas usaron un tercio menos de peticiones.
+- **Muchas veces más lento.** Cada hook suma unos cientos de milisegundos por llamada, y Codex verifica su trabajo antes de terminar: 57 s → 70 s por corrida en promedio con la 0.2.0, y +27% y +67% en las tareas de pruebas lentas y Dockerfile con la 0.3.0. La migración fue la excepción (−69%).
 - **Una muestra pequeña.** Una máquina con Windows, un modelo, tres corridas por tarea. Córrelo en la tuya con `node bench/run.mjs`. Gasta cuota de tu Codex, y mientras corre no abras otras sesiones de Codex: las corridas sin better-codex les ocultan sus reglas. Los números crudos están en [bench/results](bench/results).
 
 ## Empieza en un minuto
